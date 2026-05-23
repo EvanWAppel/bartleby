@@ -1,11 +1,13 @@
 <script lang="ts">
-  // V-005 will replace this with a ProseMirror editor bound to the
-  // hardcoded "vertical-slice" Yjs room.
+  import Editor from '$lib/Editor.svelte';
 </script>
 
 <main>
   <h1>Bartleby</h1>
-  <p data-testid="bootstrap">Web bootstrap (V-004). Editor lands in V-005.</p>
+  <p data-testid="bootstrap">
+    Vertical slice (V-005). Type below; edits sync via Hocuspocus.
+  </p>
+  <Editor />
 </main>
 
 <style>
