@@ -16,9 +16,9 @@ Companion to `PRD.md`. Every task is a small, specific unit of work with an ID a
 
 The goal of Phase 0 is to prove the hardest architectural claim in the PRD: a ProseMirror+y-prosemirror web client and a textual+y-py TUI client can be live peers on the same Yjs document via a Hocuspocus server. Nothing else is built until this works.
 
-- [ ] **V-001** Initialize monorepo: `server/`, `web/`, `tui/`, `ops/`, `docs/`. Root `README.md` with a short "what is this" + how to run each piece. (test: `ls` shows the four dirs; root README mentions all three components.)
-- [ ] **V-002** Server: bootstrap Node project in `server/` with TypeScript, vitest, prettier, eslint. (test: `npm test` runs and reports 0 tests.)
-- [ ] **V-003** Server: stand up a bare Hocuspocus instance on a local port, no auth, in-memory storage, no SQLite yet. (test: integration test boots the server and asserts a WebSocket client can connect and complete a Yjs handshake.)
+- [x] **V-001** Initialize monorepo: `server/`, `web/`, `tui/`, `ops/`, `docs/`. Root `README.md` with a short "what is this" + how to run each piece. (test: `ls` shows the four dirs; root README mentions all three components.)
+- [x] **V-002** Server: bootstrap Node project in `server/` with TypeScript, vitest, prettier, eslint. (test: `npm test` runs and reports 0 tests.)
+- [x] **V-003** Server: stand up a bare Hocuspocus instance on a local port, no auth, in-memory storage, no SQLite yet. (test: integration test boots the server and asserts a WebSocket client can connect and complete a Yjs handshake.)
 - [ ] **V-004** Web: bootstrap web project in `web/` (SvelteKit recommended; document the choice in `web/README.md`). Add vitest + playwright. (test: `npm run dev` serves index page; playwright smoke test loads it.)
 - [ ] **V-005** Web: single-page editor at `/` with a ProseMirror instance bound to a Yjs document via y-prosemirror, hardcoded room name `"vertical-slice"`, connects to local server from V-003. (test: playwright loads page, types "hello", reads it back from the DOM.)
 - [ ] **V-006** TUI: bootstrap Python project in `tui/` with `uv init`, add `textual`, `y-py`, `websockets`, `pytest`, `ruff`, `ty`, `prek`. (test: `uv run pytest` runs and reports 0 tests; `uv run ruff check` and `uv run ty check` pass on empty project.)
