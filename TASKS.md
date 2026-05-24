@@ -50,8 +50,8 @@ Lightweight infrastructure that the other workstreams depend on. Mostly fast.
 
 All migrations are SQLite. Each migration ships with a test that exercises the new schema.
 
-- [ ] **D-001** Choose and wire a SQLite migration tool (recommend `umzug` + `better-sqlite3`). Add `migrate up` / `migrate down` scripts. (test: empty DB after `up` then `down` is the same as never running; `up` is idempotent.)
-- [ ] **D-002** Migration 001 — `users`: id (uuid), email (unique), display_name, color, created_at. (test: insert + select round-trip; unique-email constraint rejects duplicates.)
+- [x] **D-001** Choose and wire a SQLite migration tool (recommend `umzug` + `better-sqlite3`). Add `migrate up` / `migrate down` scripts. (test: empty DB after `up` then `down` is the same as never running; `up` is idempotent.)
+- [x] **D-002** Migration 001 — `users`: id (uuid), email (unique), display_name, color, created_at. (test: insert + select round-trip; unique-email constraint rejects duplicates.)
 - [ ] **D-003** Migration 002 — `notes`: id (uuid), title, created_by FK users, created_at, updated_at, trashed_at (nullable), markdown_export (text), yjs_state (blob). (test: round-trip; trashed_at filter works.)
 - [ ] **D-004** Migration 003 — `note_titles_history`: note_id FK notes, title, valid_from, valid_to (nullable). Index on (title) and (note_id). (test: insert two titles for one note; resolve old title returns the right note.)
 - [ ] **D-005** Migration 004 — `tags`: note_id FK notes, tag (text). Unique (note_id, tag). Index on tag. (test: insert + dedupe; list-by-tag returns notes.)
@@ -61,7 +61,7 @@ All migrations are SQLite. Each migration ships with a test that exercises the n
 - [ ] **D-009** Migration 008 — `mentions`: id, note_id, mentioned_user_id, mentioning_user_id, source (text), created_at, read_at (nullable), email_sent_at (nullable). (test: unread filter returns only unread.)
 - [ ] **D-010** Migration 009 — FTS5 virtual table `notes_fts` over `notes.markdown_export`, with triggers maintaining it on insert/update/delete of `notes`. (test: insert a note, FTS query returns it; rename, FTS still matches.)
 - [ ] **D-011** Repository layer: typed read/write functions per table, all with tests. (test: per-table unit tests cover the public API.)
-- [ ] **D-012** Database fixture utilities for tests: in-memory SQLite + migration up, clean teardown. (test: two consecutive tests get isolated DBs.)
+- [x] **D-012** Database fixture utilities for tests: in-memory SQLite + migration up, clean teardown. (test: two consecutive tests get isolated DBs.)
 
 ---
 
