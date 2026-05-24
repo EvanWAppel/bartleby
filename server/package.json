@@ -20,6 +20,9 @@
     "@hocuspocus/extension-sqlite": "^4.1.0",
     "@hocuspocus/provider": "^4.1.0",
     "@hocuspocus/server": "^4.1.0",
+    "@hono/node-server": "^2.0.3",
+    "hono": "^4.12.22",
+    "jose": "^6.2.3",
     "ws": "^8.21.0",
     "yjs": "^13.6.30"
   },

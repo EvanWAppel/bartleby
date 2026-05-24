@@ -1,24 +1,31 @@
-// Bartleby server entrypoint. Boots a Hocuspocus instance.
-// Phase 0: in-memory, no auth. V-010 swaps in SQLite persistence.
+// Bartleby server entrypoint. Boots:
+//   - Hocuspocus WebSocket server (collab traffic; auth added in A-010)
+//   - HTTP server with the auth routes (Workstream A)
 
 import { createBartlebyServer } from './server.js';
+import { createBartlebyHttpServer } from './http.js';
 
 export function placeholder(): string {
   return 'bartleby-server';
 }
 
 async function main(): Promise<void> {
-  const port = Number(process.env.PORT ?? 1234);
+  const wsPort = Number(process.env.PORT ?? 1234);
+  const httpPort = Number(process.env.HTTP_PORT ?? 3000);
   const databasePath = process.env.BARTLEBY_DB_PATH ?? ':memory:';
-  const server = await createBartlebyServer({ port, databasePath });
+
+  const ws = await createBartlebyServer({ port: wsPort, databasePath });
+  const http = await createBartlebyHttpServer({ port: httpPort, env: process.env });
+
   console.log(
-    `bartleby server listening on ws://127.0.0.1:${server.port}` +
-      ` (db=${databasePath})`,
+    `bartleby ws://127.0.0.1:${ws.port} (db=${databasePath}); ` +
+      `http://127.0.0.1:${http.port} (auth)`,
   );
 
   const shutdown = async (): Promise<void> => {
     console.log('shutting down...');
-    await server.destroy();
+    await http.close();
+    await ws.destroy();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
