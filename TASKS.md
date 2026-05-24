@@ -59,7 +59,7 @@ All migrations are SQLite. Each migration ships with a test that exercises the n
 - [x] **D-007** Migration 006 — `comments`: id, note_id, author_id, parent_comment_id (nullable), anchor (text), original_quote (text), body, created_at, resolved_at (nullable). (test: insert thread; resolve sets resolved_at.)
 - [x] **D-008** Migration 007 — `snapshots`: id, note_id, yjs_state (blob), created_at, label (nullable). Index on (note_id, created_at). (test: insert + list-by-note-newest-first.)
 - [x] **D-009** Migration 008 — `mentions`: id, note_id, mentioned_user_id, mentioning_user_id, source (text), created_at, read_at (nullable), email_sent_at (nullable). (test: unread filter returns only unread.)
-- [ ] **D-010** Migration 009 — FTS5 virtual table `notes_fts` over `notes.markdown_export`, with triggers maintaining it on insert/update/delete of `notes`. (test: insert a note, FTS query returns it; rename, FTS still matches.)
+- [x] **D-010** Migration 009 — FTS5 virtual table `notes_fts` over `notes.markdown_export`, with triggers maintaining it on insert/update/delete of `notes`. (test: insert a note, FTS query returns it; rename, FTS still matches.)
 - [ ] **D-011** Repository layer: typed read/write functions per table, all with tests. (test: per-table unit tests cover the public API.)
 - [x] **D-012** Database fixture utilities for tests: in-memory SQLite + migration up, clean teardown. (test: two consecutive tests get isolated DBs.)
 
