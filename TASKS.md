@@ -52,8 +52,8 @@ All migrations are SQLite. Each migration ships with a test that exercises the n
 
 - [x] **D-001** Choose and wire a SQLite migration tool (recommend `umzug` + `better-sqlite3`). Add `migrate up` / `migrate down` scripts. (test: empty DB after `up` then `down` is the same as never running; `up` is idempotent.)
 - [x] **D-002** Migration 001 — `users`: id (uuid), email (unique), display_name, color, created_at. (test: insert + select round-trip; unique-email constraint rejects duplicates.)
-- [ ] **D-003** Migration 002 — `notes`: id (uuid), title, created_by FK users, created_at, updated_at, trashed_at (nullable), markdown_export (text), yjs_state (blob). (test: round-trip; trashed_at filter works.)
-- [ ] **D-004** Migration 003 — `note_titles_history`: note_id FK notes, title, valid_from, valid_to (nullable). Index on (title) and (note_id). (test: insert two titles for one note; resolve old title returns the right note.)
+- [x] **D-003** Migration 002 — `notes`: id (uuid), title, created_by FK users, created_at, updated_at, trashed_at (nullable), markdown_export (text). (Yjs blob lives in Hocuspocus's `documents` table, not here — see `server/src/db/README.md`.) (test: round-trip; trashed_at filter works.)
+- [x] **D-004** Migration 003 — `note_titles_history`: note_id FK notes, title, valid_from, valid_to (nullable). Index on (title) and (note_id). (test: insert two titles for one note; resolve old title returns the right note.)
 - [ ] **D-005** Migration 004 — `tags`: note_id FK notes, tag (text). Unique (note_id, tag). Index on tag. (test: insert + dedupe; list-by-tag returns notes.)
 - [ ] **D-006** Migration 005 — `backlinks`: source_note_id, target_note_id, link_text. Index on both. (test: insert + query inbound returns correct sources.)
 - [ ] **D-007** Migration 006 — `comments`: id, note_id, author_id, parent_comment_id (nullable), anchor (text), original_quote (text), body, created_at, resolved_at (nullable). (test: insert thread; resolve sets resolved_at.)
