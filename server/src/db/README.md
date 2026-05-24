@@ -58,3 +58,18 @@ The bridge between the two tables is the note uuid:
 ## Test fixture (D-012)
 
 Tests should `import { test } from '../test-fixture.js'` and write `test('case', ({ db }) => …)`. Each test gets a freshly migrated in-memory database that is closed after the test exits. For the rare case that you want two databases in the same test, call `createTestDatabase()` directly and close it yourself.
+
+## Repository layer (D-011)
+
+Application code should not write raw SQL. Instead, import from `./repositories`:
+
+```ts
+import { createRepositories } from './db/repositories/index.js';
+
+const repos = createRepositories(db);
+const note = repos.notes.findById('…');
+repos.tags.replaceForNote(noteId, ['travel', 'food']);
+const hits = repos.search.searchNotes('paella');
+```
+
+Each table has its own file under `repositories/` exporting a typed factory (`createXRepository(db)`) plus the row interface. The aggregate `Repositories` interface and `createRepositories(db)` are exported from `repositories/index.ts`. Functions are kept narrow — only what S/C/M/I will consume; add methods as those workstreams need them.
