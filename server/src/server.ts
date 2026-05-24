@@ -19,7 +19,9 @@ export interface BartlebyServer {
   destroy(): Promise<void>;
 }
 
-export async function createBartlebyServer(options: BartlebyServerOptions): Promise<BartlebyServer> {
+export async function createBartlebyServer(
+  options: BartlebyServerOptions,
+): Promise<BartlebyServer> {
   const databasePath = options.databasePath ?? ':memory:';
 
   const server = new Server({
