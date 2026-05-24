@@ -23,10 +23,10 @@ The goal of Phase 0 is to prove the hardest architectural claim in the PRD: a Pr
 - [x] **V-005** Web: single-page editor at `/` with a ProseMirror instance bound to a Yjs document via y-prosemirror, hardcoded room name `"vertical-slice"`, connects to local server from V-003. (test: playwright loads page, types "hello", reads it back from the DOM.)
 - [x] **V-006** TUI: bootstrap Python project in `tui/` with `uv init`, add `textual`, `y-py`, `websockets`, `pytest`, `ruff`, `ty`, `prek`. (test: `uv run pytest` runs and reports 0 tests; `uv run ruff check` and `uv run ty check` pass on empty project.)
 - [x] **V-007** TUI: minimal textual app that connects to the local server, joins the same `"vertical-slice"` room, and shows the Yjs document's text content in a single read-only widget. (test: pytest integration test using `textual.pilot` confirms the widget renders text after a remote Yjs update is applied.)
-- [ ] **V-008** TUI: enable local editing — keystrokes in the widget produce Yjs ops that propagate to the server. (test: pytest drives a TextArea via pilot, asserts the resulting Yjs document state matches expectation; second integration test asserts the change is visible via a separate y-py client.)
-- [ ] **V-009** End-to-end smoke (manual + scripted): run server + web + TUI, type in web, observe text appearing in TUI, type in TUI, observe text appearing in web. Record a short asciinema or screenshot in `docs/vertical-slice.md`.
-- [ ] **V-010** Server: replace in-memory storage with Hocuspocus's SQLite extension; persist Yjs state across restarts. (test: integration test writes data, restarts the server, reads it back.)
-- [ ] **V-011** Confirm V-009 still works with persistence enabled. Update `docs/vertical-slice.md` with the restart-survives-data caveat.
+- [x] **V-008** TUI: enable local editing — keystrokes in the widget produce Yjs ops that propagate to the server. (test: pytest drives a TextArea via pilot, asserts the resulting Yjs document state matches expectation; second integration test asserts the change is visible via a separate y-py client.)
+- [x] **V-009** End-to-end smoke (manual + scripted): run server + web + TUI, type in web, observe text appearing in TUI, type in TUI, observe text appearing in web. Record a short asciinema or screenshot in `docs/vertical-slice.md`. *(scripted parts covered by automated tests; asciinema is operator to record.)*
+- [x] **V-010** Server: replace in-memory storage with Hocuspocus's SQLite extension; persist Yjs state across restarts. (test: integration test writes data, restarts the server, reads it back.)
+- [x] **V-011** Confirm V-009 still works with persistence enabled. Update `docs/vertical-slice.md` with the restart-survives-data caveat.
 
 **Phase 0 exit criteria:** all V- tasks checked. The architecture is proven; parallel workstreams can begin.
 

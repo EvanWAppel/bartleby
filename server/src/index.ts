@@ -9,8 +9,12 @@ export function placeholder(): string {
 
 async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? 1234);
-  const server = await createBartlebyServer({ port });
-  console.log(`bartleby server listening on ws://127.0.0.1:${server.port}`);
+  const databasePath = process.env.BARTLEBY_DB_PATH ?? ':memory:';
+  const server = await createBartlebyServer({ port, databasePath });
+  console.log(
+    `bartleby server listening on ws://127.0.0.1:${server.port}` +
+      ` (db=${databasePath})`,
+  );
 
   const shutdown = async (): Promise<void> => {
     console.log('shutting down...');
