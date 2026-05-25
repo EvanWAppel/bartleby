@@ -36,13 +36,13 @@ The goal of Phase 0 is to prove the hardest architectural claim in the PRD: a Pr
 
 Lightweight infrastructure that the other workstreams depend on. Mostly fast.
 
-- [ ] **R-001** Root `.editorconfig`, `.gitignore`, `LICENSE` (MIT or similar). (test: lint config check or just visual review.)
-- [ ] **R-002** `tui/`: set up `prek` pre-commit hooks running `ruff` and `ty`. (test: `prek run --all-files` passes on a clean tree; failing test added to confirm a deliberately broken file fails the hook.)
-- [ ] **R-003** `server/`: set up husky or lefthook for pre-commit running `eslint` + `prettier --check` + `vitest run`. (test: hook fires on commit attempt; broken file blocks commit.)
-- [ ] **R-004** `web/`: same pattern as R-003 (eslint, prettier, vitest, optional `svelte-check`/`tsc --noEmit`).
+- [x] **R-001** Root `.editorconfig`, `.gitignore`, `LICENSE` (MIT or similar). (test: lint config check or just visual review.)
+- [x] **R-002** `tui/`: set up `prek` pre-commit hooks running `ruff` and `ty`. (test: `prek run --all-files` passes on a clean tree; failing test added to confirm a deliberately broken file fails the hook.)
+- [x] **R-003** `server/`: set up husky or lefthook for pre-commit running `eslint` + `prettier --check` + `vitest run`. (test: hook fires on commit attempt; broken file blocks commit.)
+- [x] **R-004** `web/`: same pattern as R-003 (eslint, prettier, vitest, optional `svelte-check`/`tsc --noEmit`).
 - [ ] **R-005** GitHub Actions workflow `.github/workflows/ci.yml`: jobs for server (Node), web (Node), tui (Python via uv) running tests + lint + typecheck on PR. (test: PR opened against `main` triggers all three jobs.)
 - [ ] **R-006** GitHub Actions: cache `node_modules`, `uv` venv, and Playwright browsers for fast CI. (test: second run completes faster than first; cache hit logged.)
-- [ ] **R-007** Root `Makefile` (or `justfile`) with targets: `dev` (run all three concurrently), `test` (run all suites), `lint`, `typecheck`. (test: `make test` exits 0 on a green tree.)
+- [x] **R-007** Root `Makefile` (or `justfile`) with targets: `dev` (run all three concurrently), `test` (run all suites), `lint`, `typecheck`. (test: `make test` exits 0 on a green tree.)
 
 ---
 
