@@ -18,6 +18,7 @@ npm run lint
 ## Why SvelteKit
 
 PRD §7.4 left framework as TBD. Picked SvelteKit because:
+
 - Tiny runtime, fast dev loop.
 - ProseMirror integrates cleanly with any framework; Svelte 5's runes make
   reactive state around the editor simple.

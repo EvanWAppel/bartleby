@@ -4,9 +4,7 @@
 
 <main>
   <h1>Bartleby</h1>
-  <p data-testid="bootstrap">
-    Vertical slice (V-005). Type below; edits sync via Hocuspocus.
-  </p>
+  <p data-testid="bootstrap">Vertical slice (V-005). Type below; edits sync via Hocuspocus.</p>
   <Editor />
 </main>
 

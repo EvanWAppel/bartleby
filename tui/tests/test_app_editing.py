@@ -49,9 +49,7 @@ async def test_keystrokes_propagate_to_peer(hocuspocus_server: str) -> None:
 
     async with (
         app.run_test() as pilot,
-        HocuspocusConnection(
-            url=hocuspocus_server, doc_name=room, document=peer_doc
-        ) as peer,
+        HocuspocusConnection(url=hocuspocus_server, doc_name=room, document=peer_doc) as peer,
     ):
         await _wait_until_synced(app, pilot)
         await asyncio.wait_for(peer.wait_synced(), timeout=5.0)
