@@ -4,6 +4,7 @@
 // after validating env config and running pending migrations (Workstream D).
 
 import { loadConfig } from './config.js';
+import { openDatabase } from './db/open.js';
 import { createLogger } from './logger.js';
 import { runMigrations } from './migrate.js';
 import { createBartlebyServer } from './server.js';
@@ -31,10 +32,15 @@ async function main(): Promise<void> {
     'starting bartleby',
   );
 
-  // 3. Run migrations idempotently (no-op until D's umzug glue lands).
+  // 3. Run migrations idempotently.
   await runMigrations({ databasePath: config.BARTLEBY_DB_PATH, logger });
 
-  // 4. Boot the WS server. WS bind is configurable (Caddy fronts
+  // 4. Long-lived DB connection for the runtime process (separate from
+  //    the one Hocuspocus's SQLite extension owns; SQLite WAL mode
+  //    handles concurrent readers + a single writer per process).
+  const db = openDatabase(config.BARTLEBY_DB_PATH);
+
+  // 5. Boot the WS server. WS bind is configurable (Caddy fronts
   //    publicly in production).
   const ws = await createBartlebyServer({
     port: config.PORT,
@@ -42,16 +48,18 @@ async function main(): Promise<void> {
     address: config.BARTLEBY_BIND_ADDRESS,
   });
 
-  // 5. Boot the auth HTTP server only if PUBLIC_BASE_URL is set —
-  //    createBartlebyHttpServer needs it to build OAuth redirect URIs
-  //    and downstream auth helpers also need BARTLEBY_ALLOWED_EMAILS /
-  //    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Local dev and integ
-  //    tests can run with just the WS server (no auth yet).
+  // 6. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
+  //    set — createBartlebyHttpServer needs it to build OAuth redirect
+  //    URIs and downstream auth helpers also need
+  //    BARTLEBY_ALLOWED_EMAILS / GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
+  //    Local dev and integ tests can run with just the WS server.
   let http: Awaited<ReturnType<typeof createBartlebyHttpServer>> | undefined;
   if (config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0) {
     http = await createBartlebyHttpServer({
       port: config.HTTP_PORT,
       env: process.env,
+      db,
+      logger,
     });
     logger.info(
       {
@@ -73,6 +81,7 @@ async function main(): Promise<void> {
       await http.close();
     }
     await ws.destroy();
+    db.close();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
