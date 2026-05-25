@@ -235,8 +235,8 @@ Depends on web app baseline (W-001 to W-003).
 
 Targets a single small VPS. Depends on the server being launchable as a single Node process.
 
-- [ ] **O-001** `server/Dockerfile`: multi-stage build, slim runtime, non-root user. (test: `docker build` succeeds; image runs and serves `/health`.)
-- [ ] **O-002** `server/healthcheck`: `GET /health` returns 200 with DB connection check. (test: returns 200 when DB ok, 503 when DB broken.)
+- [x] **O-001** `server/Dockerfile`: multi-stage build, slim runtime, non-root user. (test: `docker build` succeeds; image runs and serves `/health`.) *(Dockerfile written; `docker build` smoke deferred — Docker not installed in this dev env. CI/deploy will exercise it.)*
+- [x] **O-002** `server/healthcheck`: `GET /health` returns 200 with DB connection check. (test: returns 200 when DB ok, 503 when DB broken.)
 - [ ] **O-003** `ops/docker-compose.yml`: services `bartleby`, `caddy`, `litestream`. Volumes for SQLite, Caddy data, Litestream config. (test: `docker compose up` brings all three to healthy.)
 - [ ] **O-004** `ops/Caddyfile`: subdomain config with auto TLS via Let's Encrypt, reverse proxy to `bartleby:port`, WebSocket upgrade for the Hocuspocus endpoint. (test: TLS handshake works against a staging hostname.)
 - [ ] **O-005** `ops/litestream.yml`: continuous replication of `bartleby.db` to S3-compatible bucket (env-driven endpoint/key). (test: write to DB → replicated object updates within seconds.)
