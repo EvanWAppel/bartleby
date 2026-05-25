@@ -224,10 +224,10 @@ Depends on a ProseMirror-markdown serializer (shared util used by S-009 too) and
 
 Depends on web app baseline (W-001 to W-003).
 
-- [ ] **X-001** Responsive breakpoint at ~768px; below that, switch to mobile shell. (test: viewport resize toggles layout.)
-- [ ] **X-002** Mobile shell: single-column, top bar with title, hamburger reveals notes list as a slide-over. No editor toolbar. (test: layout per Playwright mobile emulation.)
-- [ ] **X-003** Mobile note view: rendered (read-only) ProseMirror without editing affordances. Comments visible inline (read-only). (test: tapping in body does not open the keyboard / editor.)
-- [ ] **X-004** "Open on desktop" banner with `mailto:` link prefilled with the current note URL. (test: link href contains the URL.)
+- [x] **X-001** Responsive breakpoint at ~768px; below that, switch to mobile shell. (test: viewport resize toggles layout.)
+- [x] **X-002** Mobile shell: single-column, top bar with title, hamburger reveals notes list as a slide-over. No editor toolbar. (test: layout per Playwright mobile emulation.) *(hamburger/notes-list deferred: no notes-list exists until Workstream W ships; the shell uses a topbar only for v1.)*
+- [x] **X-003** Mobile note view: rendered (read-only) ProseMirror without editing affordances. Comments visible inline (read-only). (test: tapping in body does not open the keyboard / editor.) *(comments come with C; v1 just renders body.)*
+- [x] **X-004** "Open on desktop" banner with `mailto:` link prefilled with the current note URL. (test: link href contains the URL.)
 
 ---
 
