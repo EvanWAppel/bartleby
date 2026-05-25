@@ -18,7 +18,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "declaration": true,
+    "declaration": false,
     "sourceMap": true
   },
   "include": ["src/**/*"],

@@ -35,3 +35,12 @@ __pycache__/
 playwright-report/
 test-results/
 coverage/
+
+# Husky internals (the actual hooks under .husky/ stay tracked)
+.husky/_/
+
+# Claude Code personal settings (machine-specific paths)
+.claude/settings.local.json
+
+# Sub-agent worktrees (live inside the project so spawned agents can reach them)
+.worktrees/

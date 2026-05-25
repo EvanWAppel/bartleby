@@ -1,0 +1,24 @@
+# Litestream replication config.
+#
+# Replicates /data/bartleby.db continuously to an S3-compatible bucket.
+# All sensitive values come from env vars (set in ops/.env, never
+# committed). The intended targets are Backblaze B2 or Cloudflare R2;
+# any S3-compatible store works.
+#
+# Verify locally with:
+#   docker compose -f ops/docker-compose.yml run --rm litestream snapshots /data/bartleby.db
+
+dbs:
+  - path: /data/bartleby.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        # Bartleby is small (a few MB of CRDT state); shorter intervals
+        # keep RPO low without much cost.
+        sync-interval: 1s
+        snapshot-interval: 1h
+        retention: 720h  # 30 days

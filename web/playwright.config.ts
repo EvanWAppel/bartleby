@@ -16,6 +16,22 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // Mobile projects only run the mobile-* test files — the editor smoke
+    // test requires a visible ProseMirror surface that doesn't exist on
+    // phones (the editor is hidden via CSS below 768px).
+    // Both projects use chromium as the engine (overriding iPhone 13's
+    // webkit default) so we don't need a separate webkit browser install;
+    // we still get correct viewport/UA/touch emulation for the form factor.
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 13'], browserName: 'chromium' },
+      testMatch: '**/mobile-*.test.ts',
+    },
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 5'] },
+      testMatch: '**/mobile-*.test.ts',
+    },
   ],
   webServer: [
     {

@@ -1,0 +1,14 @@
+{
+  "name": "bartleby-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Root tooling for the Bartleby monorepo: husky hooks + concurrent dev orchestration. Component code lives in server/, web/, tui/.",
+  "scripts": {
+    "prepare": "husky",
+    "dev": "concurrently -k -n server,web,tui -c blue,green,magenta \"npm --prefix server run dev\" \"npm --prefix web run dev\" \"cd tui && uv run bartleby-tui\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "husky": "^9.1.0"
+  }
+}
