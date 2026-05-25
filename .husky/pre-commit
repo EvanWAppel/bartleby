@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+# Bartleby pre-commit: runs each component's lint + format check + tests.
+# Per TASKS.md R-003/R-004: husky in server + web running eslint, prettier
+# --check, vitest (plus svelte-check for web). TUI uses prek + ruff + ty +
+# pytest per agents.md.
+#
+# This is intentionally strict — it can be slow. Bypass for a deliberate
+# WIP commit with `git commit --no-verify` (then fix before push; CI will
+# block you).
+
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Server.
+if [ -d server/node_modules ]; then
+  echo "▸ server: eslint + prettier:check + vitest"
+  npm --prefix server run lint
+  npm --prefix server run format:check
+  npm --prefix server test
+else
+  echo "↳ server/node_modules missing — skipping server hooks (run \`npm --prefix server install\`)"
+fi
+
+# Web.
+if [ -d web/node_modules ]; then
+  echo "▸ web: eslint + prettier:check + svelte-check + vitest"
+  npm --prefix web run lint
+  npm --prefix web run format:check
+  npm --prefix web run typecheck
+  npm --prefix web test
+else
+  echo "↳ web/node_modules missing — skipping web hooks (run \`npm --prefix web install\`)"
+fi
+
+# TUI.
+if [ -d tui/.venv ]; then
+  echo "▸ tui: prek (ruff + ruff-format + standard hygiene) + ty + pytest"
+  ( cd tui && uv run prek run --all-files && uv run ty check && uv run pytest )
+else
+  echo "↳ tui/.venv missing — skipping tui hooks (run \`cd tui && uv sync\`)"
+fi
+
+echo "✓ pre-commit clean"

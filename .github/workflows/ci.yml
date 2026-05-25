@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-progress runs of the same workflow for the same branch/PR when
+# new commits arrive. CI is the gate, not a history record.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (node + vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Format check (prettier)
+        run: npm run format:check
+
+      - name: Typecheck (tsc)
+        run: npm run typecheck
+
+      - name: Test (vitest)
+        run: npm test
+
+  web:
+    name: web (sveltekit + vitest + playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # Playwright's webServer config spawns the bartleby server via
+      # `npm run dev --prefix ../server` (tsx). That requires server's
+      # node_modules to exist alongside web's.
+      - name: Install server deps (for Playwright webServer)
+        working-directory: server
+        run: npm ci
+
+      # Playwright browsers cache. Versioned by the @playwright/test entry
+      # in package-lock.json so a Playwright bump invalidates the cache.
+      - name: Resolve Playwright version
+        id: pw
+        run: |
+          version=$(node -p "require('./package.json').devDependencies['@playwright/test'].replace(/^[^0-9]*/, '')")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cached browsers)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Format check (prettier)
+        run: npm run format:check
+
+      - name: Typecheck (svelte-check)
+        run: npm run typecheck
+
+      - name: Unit tests (vitest)
+        run: npm test
+
+      - name: E2E tests (playwright)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
+
+  tui:
+    name: tui (python + textual + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tui
+    steps:
+      - uses: actions/checkout@v4
+
+      # The TUI's integration tests spawn the bartleby server via npm.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server deps (needed by tui's pytest fixtures)
+        working-directory: server
+        run: npm ci
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'tui/uv.lock'
+          python-version: '3.12'
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check
+
+      - name: Typecheck (ty)
+        run: uv run ty check
+
+      - name: Test (pytest)
+        run: uv run pytest
