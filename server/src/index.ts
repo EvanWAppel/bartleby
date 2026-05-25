@@ -1,18 +1,21 @@
-// Bartleby server entrypoint. Boots a Hocuspocus instance after
-// validating env config and running pending migrations.
+// Bartleby server entrypoint. Boots:
+//   - Hocuspocus WebSocket server (collab traffic; auth on WS lands in A-010)
+//   - HTTP server with the auth routes (Workstream A)
+// after validating env config and running pending migrations (Workstream D).
 
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { runMigrations } from './migrate.js';
 import { createBartlebyServer } from './server.js';
+import { createBartlebyHttpServer } from './http.js';
 
 export function placeholder(): string {
   return 'bartleby-server';
 }
 
 async function main(): Promise<void> {
-  // 1. Validate env. Throws + exits if a required var is missing or
-  //    a value violates its schema.
+  // 1. Validate env. Throws + exits if a required var is missing or a
+  //    value violates its schema.
   const config = loadConfig();
 
   // 2. Structured logger from validated config.
@@ -20,31 +23,56 @@ async function main(): Promise<void> {
 
   logger.info(
     {
-      port: config.PORT,
+      wsPort: config.PORT,
+      httpPort: config.HTTP_PORT,
       bind: config.BARTLEBY_BIND_ADDRESS,
       databasePath: config.BARTLEBY_DB_PATH,
     },
-    'starting bartleby server',
+    'starting bartleby',
   );
 
-  // 3. Run migrations idempotently (no-op until Workstream D ships).
+  // 3. Run migrations idempotently (no-op until D's umzug glue lands).
   await runMigrations({ databasePath: config.BARTLEBY_DB_PATH, logger });
 
-  // 4. Boot the Hocuspocus server.
-  const server = await createBartlebyServer({
+  // 4. Boot the WS server. WS bind is configurable (Caddy fronts
+  //    publicly in production).
+  const ws = await createBartlebyServer({
     port: config.PORT,
     databasePath: config.BARTLEBY_DB_PATH,
     address: config.BARTLEBY_BIND_ADDRESS,
   });
 
-  logger.info(
-    { url: `ws://${config.BARTLEBY_BIND_ADDRESS}:${server.port}` },
-    'bartleby server listening',
-  );
+  // 5. Boot the auth HTTP server only if PUBLIC_BASE_URL is set —
+  //    createBartlebyHttpServer needs it to build OAuth redirect URIs
+  //    and downstream auth helpers also need BARTLEBY_ALLOWED_EMAILS /
+  //    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Local dev and integ
+  //    tests can run with just the WS server (no auth yet).
+  let http: Awaited<ReturnType<typeof createBartlebyHttpServer>> | undefined;
+  if (config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0) {
+    http = await createBartlebyHttpServer({
+      port: config.HTTP_PORT,
+      env: process.env,
+    });
+    logger.info(
+      {
+        ws: `ws://${config.BARTLEBY_BIND_ADDRESS}:${ws.port}`,
+        http: `http://127.0.0.1:${http.port}`,
+      },
+      'bartleby listening (ws + http)',
+    );
+  } else {
+    logger.warn(
+      { ws: `ws://${config.BARTLEBY_BIND_ADDRESS}:${ws.port}` },
+      'bartleby listening (ws only; PUBLIC_BASE_URL unset, HTTP/auth skipped)',
+    );
+  }
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
-    await server.destroy();
+    if (http !== undefined) {
+      await http.close();
+    }
+    await ws.destroy();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));

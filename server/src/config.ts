@@ -10,13 +10,18 @@
 
 import { z } from 'zod';
 
-const PortSchema = z.coerce.number().int().min(1).max(65_535).default(1234);
+const portSchema = (defaultPort: number) =>
+  z.coerce.number().int().min(1).max(65_535).default(defaultPort);
 
 const LogLevelSchema = z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info');
 
 export const ConfigSchema = z.object({
   // Networking + storage (defaulted; safe to omit).
-  PORT: PortSchema,
+  PORT: portSchema(1234),
+  // Workstream A's REST/auth surface runs on a separate port from the
+  // Hocuspocus WS server. A-010 will fold WS auth in; until then HTTP
+  // and WS live on different ports.
+  HTTP_PORT: portSchema(3000),
   BARTLEBY_BIND_ADDRESS: z.string().default('127.0.0.1'),
   BARTLEBY_DB_PATH: z.string().default(':memory:'),
   LOG_LEVEL: LogLevelSchema,
