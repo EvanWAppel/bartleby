@@ -11,11 +11,35 @@ export function placeholder(): string {
 }
 
 async function main(): Promise<void> {
-  const port = Number(process.env.PORT ?? 1234);
-  const databasePath = process.env.BARTLEBY_DB_PATH ?? ':memory:';
-  const server = await createBartlebyServer({ port, databasePath });
-  console.log(
-    `bartleby server listening on ws://127.0.0.1:${server.port}` + ` (db=${databasePath})`,
+  // 1. Validate env. Throws + exits if a required var is missing or
+  //    a value violates its schema.
+  const config = loadConfig();
+
+  // 2. Structured logger from validated config.
+  const logger = createLogger(config.LOG_LEVEL);
+
+  logger.info(
+    {
+      port: config.PORT,
+      bind: config.BARTLEBY_BIND_ADDRESS,
+      databasePath: config.BARTLEBY_DB_PATH,
+    },
+    'starting bartleby server',
+  );
+
+  // 3. Run migrations idempotently (no-op until Workstream D ships).
+  await runMigrations({ databasePath: config.BARTLEBY_DB_PATH, logger });
+
+  // 4. Boot the Hocuspocus server.
+  const server = await createBartlebyServer({
+    port: config.PORT,
+    databasePath: config.BARTLEBY_DB_PATH,
+    address: config.BARTLEBY_BIND_ADDRESS,
+  });
+
+  logger.info(
+    { url: `ws://${config.BARTLEBY_BIND_ADDRESS}:${server.port}` },
+    'bartleby server listening',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
