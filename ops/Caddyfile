@@ -1,0 +1,26 @@
+# Bartleby Caddy reverse proxy.
+#
+# Caddy auto-provisions TLS via Let's Encrypt for any non-localhost
+# hostname. WebSocket upgrade is handled automatically by reverse_proxy.
+#
+# Environment:
+#   BARTLEBY_DOMAIN — e.g. bartleby.example.com
+
+{
+	# Email used for ACME registration (Let's Encrypt). Optional but
+	# strongly recommended so you get expiry notifications.
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$BARTLEBY_DOMAIN} {
+	encode zstd gzip
+
+	# Hocuspocus serves both HTTP and WebSocket on the same port. Caddy's
+	# reverse_proxy handles Upgrade headers transparently.
+	reverse_proxy bartleby:1234
+
+	log {
+		output stdout
+		format json
+	}
+}

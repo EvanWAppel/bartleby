@@ -1,0 +1,84 @@
+# Bartleby production stack: Bartleby server + Caddy (TLS) + Litestream.
+#
+# Usage:
+#   cp ops/.env.example ops/.env
+#   # edit ops/.env to fill in BARTLEBY_DOMAIN, S3 creds, etc.
+#   docker compose -f ops/docker-compose.yml up -d --build
+#
+# Validation:
+#   docker compose -f ops/docker-compose.yml config
+
+name: bartleby
+
+services:
+  bartleby:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: bartleby
+    restart: unless-stopped
+    expose:
+      - "1234"
+    environment:
+      PORT: '1234'
+      BARTLEBY_BIND_ADDRESS: '0.0.0.0'
+      BARTLEBY_DB_PATH: '/data/bartleby.db'
+      # These are consumed by future workstreams (A, M); placeholders below
+      # so the stack stays valid as they land. Set real values in .env.
+      BARTLEBY_ALLOWED_EMAILS: ${BARTLEBY_ALLOWED_EMAILS:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - bartleby_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:1234/health').then(r=>{if(r.status!==200)process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: bartleby-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      BARTLEBY_DOMAIN: ${BARTLEBY_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      bartleby:
+        condition: service_healthy
+
+  litestream:
+    image: litestream/litestream:0.3
+    container_name: bartleby-litestream
+    restart: unless-stopped
+    # Litestream needs read access to the SQLite file; mount the same
+    # volume the bartleby service writes to.
+    volumes:
+      - bartleby_data:/data
+      - ./litestream.yml:/etc/litestream.yml:ro
+    environment:
+      LITESTREAM_BUCKET: ${LITESTREAM_BUCKET}
+      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT}
+      LITESTREAM_REGION: ${LITESTREAM_REGION:-us-east-1}
+      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID}
+      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY}
+    command: ["replicate", "-config", "/etc/litestream.yml"]
+    depends_on:
+      bartleby:
+        condition: service_healthy
+
+volumes:
+  bartleby_data:
+  caddy_data:
+  caddy_config:
