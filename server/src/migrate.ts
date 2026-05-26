@@ -1,33 +1,25 @@
-// Migration entrypoint — runs at container/dev startup before the
-// Hocuspocus + HTTP servers boot. Idempotent: running twice is a no-op.
+// Migration entrypoint — runs at startup before the Hocuspocus + HTTP
+// servers boot. Idempotent: running twice is a no-op.
 //
-// Originally an O-PR-4 placeholder pending D-001. Now wired to D's
-// umzug-based migrator: opens the SQLite file, applies any pending
-// migrations, closes its own handle (the runtime opens a separate
-// long-lived connection in src/db/open.ts).
+// Takes an already-open better-sqlite3 handle so the runtime can use
+// the same connection downstream. This matters for `:memory:` paths
+// (every connection to `:memory:` is a fresh database, so opening two
+// would mean migrations apply to a db nobody else can see).
 
+import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
-import { openDatabase } from './db/open.js';
 import { createMigrator } from './db/migrator.js';
 
 export interface MigrateOptions {
-  databasePath: string;
+  db: Database;
   logger: Logger;
 }
 
 export async function runMigrations(options: MigrateOptions): Promise<void> {
-  const db = openDatabase(options.databasePath);
-  try {
-    const migrator = createMigrator(db);
-    const applied = await migrator.up();
-    options.logger.info(
-      {
-        databasePath: options.databasePath,
-        applied: applied.map((m) => m.name),
-      },
-      applied.length === 0 ? 'migrate: schema already up to date' : 'migrate: applied',
-    );
-  } finally {
-    db.close();
-  }
+  const migrator = createMigrator(options.db);
+  const applied = await migrator.up();
+  options.logger.info(
+    { applied: applied.map((m) => m.name) },
+    applied.length === 0 ? 'migrate: schema already up to date' : 'migrate: applied',
+  );
 }

@@ -34,16 +34,18 @@ async function main(): Promise<void> {
     'starting bartleby',
   );
 
-  // 3. Run migrations idempotently.
-  await runMigrations({ databasePath: config.BARTLEBY_DB_PATH, logger });
-
-  // 4. Long-lived DB connection for the runtime process (separate from
-  //    the one Hocuspocus's SQLite extension owns; SQLite WAL mode
-  //    handles concurrent readers + a single writer per process).
+  // 3. Open the long-lived DB connection FIRST, then apply migrations
+  //    against the same handle. This matters for `:memory:` paths
+  //    (every :memory: connection is a fresh database, so applying
+  //    migrations on a separate connection would leave the runtime
+  //    handle with an empty schema). Hocuspocus's SQLite extension
+  //    opens its own connection to the same path — WAL mode handles
+  //    the concurrent readers + one writer per process.
   const db = openDatabase(config.BARTLEBY_DB_PATH);
+  await runMigrations({ db, logger });
   const repos = createRepositories(db);
 
-  // 5. Boot the WS server with the derived-state hook attached. The
+  // 4. Boot the WS server with the derived-state hook attached. The
   //    hook fires on Hocuspocus's debounced WAL flush and keeps
   //    notes.markdown_export + tags + backlinks in sync with the live
   //    CRDT — see src/derived/hook.ts.
@@ -55,7 +57,7 @@ async function main(): Promise<void> {
     extraExtensions: [derivedHook],
   });
 
-  // 6. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
+  // 5. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
   //    set — createBartlebyHttpServer needs it to build OAuth redirect
   //    URIs and downstream auth helpers also need
   //    BARTLEBY_ALLOWED_EMAILS / GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
