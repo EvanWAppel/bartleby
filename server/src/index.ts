@@ -5,6 +5,8 @@
 
 import { loadConfig } from './config.js';
 import { openDatabase } from './db/open.js';
+import { createRepositories } from './db/repositories/index.js';
+import { createDerivedStateHook } from './derived/hook.js';
 import { createLogger } from './logger.js';
 import { runMigrations } from './migrate.js';
 import { createBartlebyServer } from './server.js';
@@ -39,13 +41,18 @@ async function main(): Promise<void> {
   //    the one Hocuspocus's SQLite extension owns; SQLite WAL mode
   //    handles concurrent readers + a single writer per process).
   const db = openDatabase(config.BARTLEBY_DB_PATH);
+  const repos = createRepositories(db);
 
-  // 5. Boot the WS server. WS bind is configurable (Caddy fronts
-  //    publicly in production).
+  // 5. Boot the WS server with the derived-state hook attached. The
+  //    hook fires on Hocuspocus's debounced WAL flush and keeps
+  //    notes.markdown_export + tags + backlinks in sync with the live
+  //    CRDT — see src/derived/hook.ts.
+  const derivedHook = createDerivedStateHook({ repos, logger });
   const ws = await createBartlebyServer({
     port: config.PORT,
     databasePath: config.BARTLEBY_DB_PATH,
     address: config.BARTLEBY_BIND_ADDRESS,
+    extraExtensions: [derivedHook],
   });
 
   // 6. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is

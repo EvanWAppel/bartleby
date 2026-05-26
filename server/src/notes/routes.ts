@@ -145,6 +145,60 @@ export function createNotesApp(deps: NotesAppDeps): Hono<{ Variables: AuthVars }
     return c.json({ notes });
   });
 
+  // GET /notes/resolve?title=... — title -> uuid (alias-aware). S-008.
+  // 200 with id when exactly one note matches (current or historical);
+  // 300 with candidates when two or more notes have ever used the title;
+  // 404 if never used; 400 if ?title is missing.
+  // Registered BEFORE /notes/:id so the static path wins.
+  app.get('/notes/resolve', (c) => {
+    const title = c.req.query('title');
+    if (title === undefined || title.length === 0) {
+      throw new ValidationError('title query param is required');
+    }
+    const matches = repos.noteTitlesHistory.resolveTitle(title);
+    // Collapse duplicates: one note may appear multiple times if its title
+    // toggled back and forth. Prefer the current row when both exist.
+    const byNote = new Map<string, { id: string; is_current: boolean }>();
+    for (const m of matches) {
+      const prev = byNote.get(m.note_id);
+      if (prev === undefined || (!prev.is_current && m.is_current)) {
+        byNote.set(m.note_id, { id: m.note_id, is_current: m.is_current });
+      }
+    }
+    const unique = [...byNote.values()];
+    if (unique.length === 0) {
+      throw new NotFoundError('title', title);
+    }
+    if (unique.length === 1) {
+      return c.json({ id: unique[0]!.id });
+    }
+    return c.json({ candidates: unique.map((u) => ({ id: u.id })) }, 300);
+  });
+
+  // GET /notes/:id/backlinks — inbound links with source titles. S-007.
+  app.get('/notes/:id/backlinks', (c) => {
+    const id = c.req.param('id');
+    if (repos.notes.findById(id) === undefined) {
+      throw new NotFoundError('note', id);
+    }
+    const rows = repos.backlinks.listInbound(id);
+    const backlinks: { source_id: string; source_title: string; link_text: string }[] = [];
+    for (const row of rows) {
+      const source = repos.notes.findById(row.source_note_id);
+      // Skip phantom sources (deleted / trashed) — we don't want clients
+      // surfacing them in an inbound-links list.
+      if (source === undefined || source.trashed_at !== null) {
+        continue;
+      }
+      backlinks.push({
+        source_id: source.id,
+        source_title: source.title,
+        link_text: row.link_text,
+      });
+    }
+    return c.json({ backlinks });
+  });
+
   // PATCH /notes/:id — rename + retag. S-004.
   app.patch('/notes/:id', async (c) => {
     const id = c.req.param('id');
