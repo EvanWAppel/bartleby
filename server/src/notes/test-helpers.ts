@@ -14,6 +14,7 @@ import { createRepositories, type Repositories } from '../db/repositories/index.
 import type { User, AuthVars } from '../auth/index.js';
 import { errorHandler } from '../http/errors.js';
 import { createNotesApp, type NotesAppDeps } from './routes.js';
+import { createSearchApp } from './search-route.js';
 
 export const TEST_USER: User = {
   id: 'u-test-1',
@@ -53,6 +54,8 @@ export function buildTestNotesApp(
   });
   const notes = createNotesApp({ repos, now: options.now });
   app.route('/', notes);
+  const search = createSearchApp({ repos });
+  app.route('/', search);
   return { repos, app };
 }
 

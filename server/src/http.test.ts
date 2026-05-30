@@ -62,4 +62,10 @@ describe('buildBartlebyHttpApp', () => {
     const res = await app.request('http://localhost:3000/notes');
     expect(res.status).toBe(401);
   });
+
+  it('/search requires a session (401 without auth cookie)', async () => {
+    const { app } = buildBartlebyHttpApp(baseEnv, deps());
+    const res = await app.request('http://localhost:3000/search?q=hello');
+    expect(res.status).toBe(401);
+  });
 });

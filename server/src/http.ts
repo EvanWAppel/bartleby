@@ -25,6 +25,7 @@ import { createRepositories } from './db/repositories/index.js';
 import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createNotesApp } from './notes/routes.js';
+import { createSearchApp } from './notes/search-route.js';
 
 export interface BartlebyHttpServer {
   readonly port: number;
@@ -82,9 +83,13 @@ export function buildBartlebyHttpApp(
   root.route('/', auth);
 
   // S routes — gated by requireSession.
-  root.use('/notes/*', requireSession({ sessionConfig, store }));
+  const auth_gate = requireSession({ sessionConfig, store });
+  root.use('/notes/*', auth_gate);
+  root.use('/search', auth_gate);
   const notes = createNotesApp({ repos });
   root.route('/', notes);
+  const search = createSearchApp({ repos });
+  root.route('/', search);
 
   return { app: root, store };
 }

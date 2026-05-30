@@ -92,11 +92,11 @@ REST endpoints for everything that isn't live Yjs traffic. All require an authen
 - [x] **S-004** `PATCH /notes/:id` — update title and/or tags. Title change appends to `note_titles_history`. (test: title rename history grows; tags replaced atomically.)
 - [x] **S-005** `DELETE /notes/:id` — soft-delete (sets `trashed_at`). (test: note disappears from `GET /notes`, appears in `GET /notes/trash`.)
 - [x] **S-006** `POST /notes/:id/restore` — clears `trashed_at`. (test: round-trip with S-005.)
-- [ ] **S-007** `GET /notes/:id/backlinks` — returns inbound links (source note id, title, link_text). (test: link from A to B shows A in B's backlinks.)
-- [ ] **S-008** `GET /notes/resolve?title=...` — title → uuid resolver using `note_titles_history`. Returns 200 with id, 404 if unknown, 300/ambiguous response if multiple current matches. (test: all three cases.)
-- [ ] **S-009** Yjs change hook: on `onStoreDocument` (Hocuspocus), serialize doc to markdown, update `notes.markdown_export`, re-extract tags (from frontmatter or inline `#tag`), re-extract `[[backlinks]]`, update FTS. Debounce per note id (1–2s). (test: write to Yjs doc → tables updated within debounce window; concurrent writes coalesce.)
+- [x] **S-007** `GET /notes/:id/backlinks` — returns inbound links (source note id, title, link_text). (test: link from A to B shows A in B's backlinks.) *(also omits backlinks whose source note has been trashed — phantom-source guard.)*
+- [x] **S-008** `GET /notes/resolve?title=...` — title → uuid resolver using `note_titles_history`. Returns 200 with id, 404 if unknown, 300/ambiguous response if multiple current matches. (test: all three cases.) *(historical titles resolve too — `[[OldName]]` after a rename still finds the note.)*
+- [x] **S-009** Yjs change hook: on `onStoreDocument` (Hocuspocus), serialize doc to markdown, update `notes.markdown_export`, re-extract tags (from frontmatter or inline `#tag`), re-extract `[[backlinks]]`, update FTS. Debounce per note id (1–2s). (test: write to Yjs doc → tables updated within debounce window; concurrent writes coalesce.) *(debounce is Hocuspocus's built-in for SQLite WAL flush — our hook runs after that, no extra debouncing needed. FTS5 triggers update notes_fts automatically off the markdown_export UPDATE.)*
 - [ ] **S-010** Trash purge job: every hour, hard-delete notes with `trashed_at` older than 30 days, cascading to comments/snapshots/backlinks/mentions/tags. (test: time-traveled note older than 30 days is purged; younger note is not.)
-- [ ] **S-011** `GET /search?q=...` — FTS search over `notes_fts`, returns notes with snippet. (test: query matches body and title.)
+- [x] **S-011** `GET /search?q=...` — FTS search over `notes_fts`, returns notes with snippet. (test: query matches body and title.)
 - [x] **S-012** Error model: consistent JSON error responses (`{ error: { code, message } }`). (test: 4xx/5xx all match shape.)
 - [x] **S-013** Request logging via pino: structured JSON, includes user id, route, status, duration. (test: log assertion via test transport.)
 

@@ -7,6 +7,7 @@
 
 import { SQLite } from '@hocuspocus/extension-sqlite';
 import { Server } from '@hocuspocus/server';
+import type { Extension } from '@hocuspocus/server';
 
 export interface BartlebyServerOptions {
   port: number;
@@ -19,6 +20,12 @@ export interface BartlebyServerOptions {
    * safety; production deployments inside Docker should pass `'0.0.0.0'`.
    */
   address?: string;
+  /**
+   * Additional Hocuspocus extensions to mount alongside SQLite. S-009
+   * passes the derived-state hook here. Default is empty so existing
+   * bare-server tests stay unaffected.
+   */
+  extraExtensions?: Extension[];
 }
 
 export interface BartlebyServer {
@@ -45,7 +52,7 @@ export async function createBartlebyServer(
     port: options.port,
     address: options.address ?? '127.0.0.1',
     quiet: true,
-    extensions: [sqlite],
+    extensions: [sqlite, ...(options.extraExtensions ?? [])],
     async onRequest({ request, response }) {
       if (request.url !== '/health') {
         return;
