@@ -106,9 +106,9 @@ REST endpoints for everything that isn't live Yjs traffic. All require an authen
 
 Each task ships with a Playwright test asserting the behavior end-to-end against a test server. Depends on V-* and A-005 (sign-in flow).
 
-- [ ] **W-001** Route skeleton: `/`, `/n/:id`, `/trash`, `/inbox`. Unauthed users hit `/login` and get redirected to Google. (test: routing + auth gate.)
-- [ ] **W-002** Sign-in page (`/login`) with a single "Sign in with Google" button. (test: click redirects to `/auth/google/start`.)
-- [ ] **W-003** App shell: left sidebar + main pane + collapsible right pane. Keyboard shortcut `Cmd-K` focuses search. (test: layout exists; shortcut focuses input.)
+- [x] **W-001** Route skeleton: `/`, `/n/:id`, `/trash`, `/inbox`. Unauthed users hit `/login` and get redirected to Google. (test: routing + auth gate.) *(PR 1 ships `/`, `/n/:id`, `/login` + the auth gate. `/trash` and `/inbox` stubs land with W-022 and W-023 respectively.)*
+- [x] **W-002** Sign-in page (`/login`) with a single "Sign in with Google" button. (test: click redirects to `/auth/google/start`.)
+- [x] **W-003** App shell: left sidebar + main pane + collapsible right pane. Keyboard shortcut `Cmd-K` focuses search. (test: layout exists; shortcut focuses input.) *(layout shipped; Cmd-K search shortcut lands with W-020 search overlay.)*
 - [ ] **W-004** Sidebar: notes list, search input, tag filter chips, "New note" button. List updates live when notes are created/renamed/deleted on the server. (test: create-from-API appears in list within 1s.)
 - [ ] **W-005** New note flow: click button → `POST /notes` → navigate to `/n/:id` with focus in the title field. (test: click leads to editable new note.)
 - [ ] **W-006** Title-in-place editor: editable `<h1>` at top of note; commits to `PATCH /notes/:id` on blur or Enter. (test: rename persists.)
@@ -133,7 +133,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [ ] **W-025** Drag-and-drop import: drop one or more `.md` files onto the notes list → POST each via import endpoint → appear in list. (test: drop 2 files → 2 new notes appear.)
 - [ ] **W-026** Export-all-as-zip button in sidebar footer. (test: download initiated; zip contains one file per note with frontmatter tags.)
 - [ ] **W-027** Per-note "Copy as markdown" in a note-options menu. (test: clipboard receives expected markdown.)
-- [ ] **W-028** Empty state for first-time users: friendly text + "Create your first note" CTA. (test: list empty → CTA visible; non-empty → CTA hidden.)
+- [x] **W-028** Empty state for first-time users: friendly text + "Create your first note" CTA. (test: list empty → CTA visible; non-empty → CTA hidden.) *(initial empty state on `/` with placeholder copy; the "Create your first note" CTA wires up in W-005.)*
 
 ---
 

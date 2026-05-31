@@ -1,5 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Test bartleby server env. The auth helper in tests/helpers/auth.ts
+// mints a session JWT signed with this same SESSION_SECRET so tests
+// skip OAuth. Allowlist + Google config are placeholders — tests never
+// actually hit Google.
+const bartlebyServerEnv = {
+  PORT: '1234',
+  HTTP_PORT: '3001',
+  BARTLEBY_BIND_ADDRESS: '127.0.0.1',
+  PUBLIC_BASE_URL: 'http://127.0.0.1:5173',
+  SESSION_SECRET: 'test-only-session-secret-must-be-at-least-32-chars',
+  BARTLEBY_ALLOWED_EMAILS: 'test@example.com',
+  GOOGLE_CLIENT_ID: 'test-client-id',
+  GOOGLE_CLIENT_SECRET: 'test-client-secret',
+  LOG_LEVEL: 'warn',
+};
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -39,13 +55,20 @@ export default defineConfig({
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+      env: {
+        BARTLEBY_HTTP_PORT: bartlebyServerEnv.HTTP_PORT,
+        // SvelteKit's hooks.server.ts verifies the session JWT locally,
+        // so it needs the same SESSION_SECRET the bartleby server (and
+        // the test auth helper) use.
+        SESSION_SECRET: bartlebyServerEnv.SESSION_SECRET,
+      },
     },
     {
-      command: 'npm run dev --prefix ../server',
+      command: 'npm run start:test --prefix ../server',
       port: 1234,
-      env: { PORT: '1234' },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+      env: bartlebyServerEnv,
     },
   ],
 });
