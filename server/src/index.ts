@@ -9,6 +9,7 @@ import { createRepositories } from './db/repositories/index.js';
 import { createDerivedStateHook } from './derived/hook.js';
 import { createLogger } from './logger.js';
 import { runMigrations } from './migrate.js';
+import { createTrashPurger } from './notes/purge.js';
 import { createBartlebyServer } from './server.js';
 import { createBartlebyHttpServer } from './http.js';
 
@@ -57,7 +58,14 @@ async function main(): Promise<void> {
     extraExtensions: [derivedHook],
   });
 
-  // 5. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
+  // 5. Hourly trash purge. Hard-deletes notes whose trashed_at is
+  //    older than 30 days (PRD §9.3) + cascades dependent rows via
+  //    FKs. Runs in the background; timer is unref()'d so it doesn't
+  //    block shutdown.
+  const purger = createTrashPurger({ repos, logger });
+  purger.start();
+
+  // 6. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
   //    set — createBartlebyHttpServer needs it to build OAuth redirect
   //    URIs and downstream auth helpers also need
   //    BARTLEBY_ALLOWED_EMAILS / GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
@@ -86,6 +94,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
+    purger.stop();
     if (http !== undefined) {
       await http.close();
     }
