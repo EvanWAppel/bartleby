@@ -175,6 +175,20 @@ export function createNotesApp(deps: NotesAppDeps): Hono<{ Variables: AuthVars }
     return c.json({ candidates: unique.map((u) => ({ id: u.id })) }, 300);
   });
 
+  // GET /notes/:id — single-note fetch (W-006 needs it for the title
+  // editor's initial load). Returns the same shape as the list items
+  // produced by toSummary(). Trashed notes return 404.
+  // Registered AFTER /notes/trash and /notes/resolve so those static
+  // paths win.
+  app.get('/notes/:id', (c) => {
+    const id = c.req.param('id');
+    const row = repos.notes.findById(id);
+    if (row === undefined || row.trashed_at !== null) {
+      throw new NotFoundError('note', id);
+    }
+    return c.json(toSummary(row, repos.tags.listForNote(row.id)));
+  });
+
   // GET /notes/:id/backlinks — inbound links with source titles. S-007.
   app.get('/notes/:id/backlinks', (c) => {
     const id = c.req.param('id');
