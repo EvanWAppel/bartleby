@@ -1,26 +1,30 @@
 <script lang="ts">
-  // /n/[id] — open one note. Desktop renders the ProseMirror editor;
-  // mobile renders the read-only reader + the "open on desktop" banner
-  // (X-001..X-004). CSS toggles which surface shows.
+  // /n/[id] — open one note. Desktop: title editor + ProseMirror.
+  // Mobile: read-only reader + "open on desktop" banner (X-001..X-004).
 
   import Editor from '$lib/Editor.svelte';
   import MobileReader from '$lib/MobileReader.svelte';
   import DesktopBanner from '$lib/DesktopBanner.svelte';
+  import TitleEditor from '$lib/components/TitleEditor.svelte';
+  import type { NoteSummary } from '$lib/api/notes';
 
   interface Props {
-    data: { id: string };
+    data: { id: string; note: NoteSummary };
   }
 
   let { data }: Props = $props();
 </script>
 
 <div class="desktop">
+  {#key data.id}
+    <TitleEditor id={data.id} title={data.note.title} />
+  {/key}
   <Editor room={data.id} />
 </div>
 
 <div class="mobile">
   <header class="topbar">
-    <h1>Bartleby</h1>
+    <h1>{data.note.title}</h1>
   </header>
   <MobileReader room={data.id} />
   <DesktopBanner />

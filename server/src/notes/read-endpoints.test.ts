@@ -20,6 +20,35 @@ async function createNote(
   return ((await res.json()) as { id: string }).id;
 }
 
+describe('GET /notes/:id (single-note fetch, added with W-006)', () => {
+  test('returns id/title/tags/updated_at/created_at for a live note', async ({ db }) => {
+    const { app, repos } = buildTestNotesApp(db, { now: fixedNow });
+    const id = await createNote(app, 'My Note');
+    repos.tags.replaceForNote(id, ['travel']);
+
+    const res = await app.request(`/notes/${id}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; title: string; tags: string[] };
+    expect(body.id).toBe(id);
+    expect(body.title).toBe('My Note');
+    expect(body.tags).toEqual(['travel']);
+  });
+
+  test('404 on unknown id', async ({ db }) => {
+    const { app } = buildTestNotesApp(db);
+    const res = await app.request('/notes/no-such-id');
+    expect(res.status).toBe(404);
+  });
+
+  test('404 when the note is trashed (treats trash as a soft-404)', async ({ db }) => {
+    const { app, repos } = buildTestNotesApp(db, { now: fixedNow });
+    const id = await createNote(app, 'doomed');
+    repos.notes.softDelete(id, FIXED_NOW.toISOString());
+    const res = await app.request(`/notes/${id}`);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /notes/:id/backlinks (S-007)', () => {
   test('returns inbound links with source title + link_text', async ({ db }) => {
     const { app, repos } = buildTestNotesApp(db, { now: fixedNow });

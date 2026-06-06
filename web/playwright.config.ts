@@ -13,6 +13,9 @@ const bartlebyServerEnv = {
   BARTLEBY_ALLOWED_EMAILS: 'test@example.com',
   GOOGLE_CLIENT_ID: 'test-client-id',
   GOOGLE_CLIENT_SECRET: 'test-client-secret',
+  // Mounts POST /auth/dev/sign-in so tests can skip the OAuth dance.
+  // NEVER set in production.
+  ALLOW_TEST_SIGN_IN: 'true',
   LOG_LEVEL: 'warn',
 };
 

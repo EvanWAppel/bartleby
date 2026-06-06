@@ -24,6 +24,7 @@ import {
 import { createRepositories } from './db/repositories/index.js';
 import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
+import { createDevAuthApp } from './auth/dev-routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
 
@@ -81,6 +82,18 @@ export function buildBartlebyHttpApp(
     appConfig: { publicBaseUrl },
   });
   root.route('/', auth);
+
+  // Test-only auth bypass — disabled by default; enabled in Playwright
+  // + local dev via ALLOW_TEST_SIGN_IN=true. Mounting it after the real
+  // auth routes means it's discoverable at the same /auth/* prefix the
+  // Vite proxy already covers.
+  if (env.ALLOW_TEST_SIGN_IN === 'true') {
+    const devAuth = createDevAuthApp({ sessionConfig, store });
+    root.route('/', devAuth);
+    deps.logger.warn(
+      'ALLOW_TEST_SIGN_IN=true — /auth/dev/sign-in is mounted. Never enable this in production.',
+    );
+  }
 
   // S routes — gated by requireSession.
   const auth_gate = requireSession({ sessionConfig, store });
