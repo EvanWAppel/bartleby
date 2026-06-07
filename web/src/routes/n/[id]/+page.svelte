@@ -6,6 +6,7 @@
   import MobileReader from '$lib/MobileReader.svelte';
   import DesktopBanner from '$lib/DesktopBanner.svelte';
   import TitleEditor from '$lib/components/TitleEditor.svelte';
+  import TagChipEditor from '$lib/components/TagChipEditor.svelte';
   import type { NoteSummary } from '$lib/api/notes';
 
   interface Props {
@@ -18,6 +19,7 @@
 <div class="desktop">
   {#key data.id}
     <TitleEditor id={data.id} title={data.note.title} />
+    <TagChipEditor id={data.id} tags={data.note.tags} />
   {/key}
   <Editor room={data.id} />
 </div>

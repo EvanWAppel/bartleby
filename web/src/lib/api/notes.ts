@@ -111,3 +111,18 @@ export async function renameNote(
   if (!res.ok) throw await parseError(res);
   return (await res.json()) as NoteSummary;
 }
+
+export async function retagNote(
+  id: string,
+  tags: string[],
+  opts: { fetch?: FetchLike } = {},
+): Promise<NoteSummary> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tags }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as NoteSummary;
+}
