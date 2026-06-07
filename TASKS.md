@@ -69,11 +69,11 @@ All migrations are SQLite. Each migration ships with a test that exercises the n
 
 Google OAuth allowlist + session cookies (web) + device-code flow (TUI). All routes after this workstream require an authenticated session.
 
-- [ ] **A-001** Allowlist config: `BARTLEBY_ALLOWED_EMAILS` env var (comma-separated) loaded at startup. (test: unknown email rejected; allowed email accepted; missing env var fails startup loudly.)
-- [ ] **A-002** Google OAuth authorization-code endpoints: `GET /auth/google/start` redirects to Google; `GET /auth/google/callback` exchanges code, fetches userinfo, checks allowlist, upserts `users` row, sets session cookie. (test: full flow with mocked Google endpoints; non-allowlisted email returns 403 and no session.)
-- [ ] **A-003** Session middleware: signed cookie containing user id; rejects unauthenticated requests on protected routes. (test: protected route returns 401 without cookie, 200 with valid cookie, 401 with tampered cookie.)
-- [ ] **A-004** `GET /auth/me` returns the current user (id, email, display_name, color). (test: returns user data when authed, 401 otherwise.)
-- [ ] **A-005** `POST /auth/logout` clears the session cookie. (test: subsequent request is unauthed.)
+- [x] **A-001** Allowlist config: `BARTLEBY_ALLOWED_EMAILS` env var (comma-separated) loaded at startup. (test: unknown email rejected; allowed email accepted; missing env var fails startup loudly.)
+- [x] **A-002** Google OAuth authorization-code endpoints: `GET /auth/google/start` redirects to Google; `GET /auth/google/callback` exchanges code, fetches userinfo, checks allowlist, upserts `users` row, sets session cookie. (test: full flow with mocked Google endpoints; non-allowlisted email returns 403 and no session.)
+- [x] **A-003** Session middleware: signed cookie containing user id; rejects unauthenticated requests on protected routes. (test: protected route returns 401 without cookie, 200 with valid cookie, 401 with tampered cookie.)
+- [x] **A-004** `GET /auth/me` returns the current user (id, email, display_name, color). (test: returns user data when authed, 401 otherwise.)
+- [x] **A-005** `POST /auth/logout` clears the session cookie. (test: subsequent request is unauthed.)
 - [ ] **A-006** Device-code start: `POST /auth/device/start` returns `{ device_code, user_code, verification_uri, interval, expires_in }`; stores pending row. (test: returns shape; row exists.)
 - [ ] **A-007** Device-code verify page: `GET /device` HTML page; `POST /device/approve` looks up user_code, attaches the authenticated user, marks approved. (test: unauthenticated user is redirected to OAuth then back to /device; approving marks row.)
 - [ ] **A-008** Device-code poll: `POST /auth/device/poll` with device_code returns 428 while pending, 200 with refresh+access tokens once approved, 410 if expired. (test: state machine covered.)
@@ -112,7 +112,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [x] **W-004** Sidebar: notes list, search input, tag filter chips, "New note" button. List updates live when notes are created/renamed/deleted on the server. (test: create-from-API appears in list within 1s.) *(W PR 2 ships the list + "new note" button + 1s polling for live updates. Search input + tag filter chips land in W-020 / W-021.)*
 - [x] **W-005** New note flow: click button → `POST /notes` → navigate to `/n/:id` with focus in the title field. (test: click leads to editable new note.) *(form-submit to `/api/notes/new` → server proxies to bartleby POST /notes → 303 to /n/[new-id]. Default title is "Untitled".)*
 - [x] **W-006** Title-in-place editor: editable `<h1>` at top of note; commits to `PATCH /notes/:id` on blur or Enter. (test: rename persists.) *(Enter triggers form-submit → server PATCH → 303 reload. Blur-to-save is deferred — Svelte 5 event delegation didn't cooperate with Playwright's programmatic blur events in this combo; Enter satisfies the core spec.)*
-- [ ] **W-007** Tag chip editor below the title: add tag (type + Enter), remove tag (× on chip). Commits via `PATCH /notes/:id`. (test: add/remove round-trips.)
+- [x] **W-007** Tag chip editor below the title: add tag (type + Enter), remove tag (× on chip). Commits via `PATCH /notes/:id`. (test: add/remove round-trips.) *(form-submit pattern: each chip × is its own form posting "tags minus this one"; the add form posts current `tags` + a `newtag` field, server combines + dedupes. The endpoint's newline delimiter for `tags` keeps tags-with-commas safe.)*
 - [ ] **W-008** ProseMirror editor with y-prosemirror, joins room `note:<id>`. Toolbar: bold, italic, strike, link, H1/H2/H3, bullet/ordered list, blockquote, code block. (test: each toolbar action produces the right ProseMirror node/mark.)
 - [ ] **W-009** Keyboard shortcuts: `Cmd-B`, `Cmd-I`, `Cmd-Shift-X`, `Cmd-K` (link), markdown-style `#` / `##` / `- ` / `1. ` / `> ` autocomplete on empty line. (test: each shortcut.)
 - [ ] **W-010** Task list rendering and toggle (click checkbox or Space when caret inside). (test: toggling persists.)
