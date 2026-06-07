@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { schema } from 'prosemirror-schema-basic';
 import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import { extractMarkdown } from './markdown.js';
+import { schema } from './schema.js';
 
 function buildYDoc(buildDoc: () => ReturnType<typeof schema.node>): Y.Doc {
   const doc = new Y.Doc();
@@ -57,5 +57,48 @@ describe('extractMarkdown (S-009)', () => {
       ]),
     );
     expect(extractMarkdown(doc)).toContain('[[Trip to Spain]]');
+  });
+
+  it('serializes a bullet_list', () => {
+    // W-008 schema extension. Two items so the renderList output is
+    // unambiguous.
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('bullet_list', null, [
+          schema.node('list_item', null, [schema.node('paragraph', null, [schema.text('first')])]),
+          schema.node('list_item', null, [schema.node('paragraph', null, [schema.text('second')])]),
+        ]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('* first');
+    expect(out).toContain('* second');
+  });
+
+  it('serializes an ordered_list', () => {
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('ordered_list', { order: 1 }, [
+          schema.node('list_item', null, [schema.node('paragraph', null, [schema.text('first')])]),
+          schema.node('list_item', null, [schema.node('paragraph', null, [schema.text('second')])]),
+        ]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('1. first');
+    expect(out).toContain('2. second');
+  });
+
+  it('serializes the strike mark as ~~text~~', () => {
+    const strike = schema.marks['strike']!;
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.text('keep '),
+          schema.text('gone', [strike.create()]),
+        ]),
+      ]),
+    );
+    expect(extractMarkdown(doc)).toBe('keep ~~gone~~');
   });
 });

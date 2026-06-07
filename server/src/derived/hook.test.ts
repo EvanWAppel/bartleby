@@ -4,12 +4,12 @@
 
 import { describe, expect } from 'vitest';
 import * as Y from 'yjs';
-import { schema } from 'prosemirror-schema-basic';
 import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import pino from 'pino';
 import { test } from '../db/test-fixture.js';
 import { createRepositories } from '../db/repositories/index.js';
 import { createDerivedStateHook } from './hook.js';
+import { schema } from './schema.js';
 
 const NOW = new Date('2026-06-01T12:00:00Z');
 const logger = pino({ level: 'silent' });
