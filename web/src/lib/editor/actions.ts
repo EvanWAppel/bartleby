@@ -10,8 +10,13 @@ export interface ToolbarActions {
   toggleBold: () => void;
   toggleItalic: () => void;
   toggleStrike: () => void;
-  /** href === null clears any link mark on the selection; non-null adds one. */
-  toggleLink: (href: string | null) => void;
+  /**
+   * Open the link popover. The popover is owned by Editor.svelte;
+   * this action only signals "user wants to add a link to the
+   * current selection." Empty selection: no-op. Replaces the W-008
+   * window.prompt-based `toggleLink` action.
+   */
+  openLinkPopover: () => void;
   setHeading: (level: 1 | 2 | 3) => void;
   toggleBulletList: () => void;
   toggleOrderedList: () => void;

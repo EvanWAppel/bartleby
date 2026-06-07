@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import EditorToolbar from '$lib/components/EditorToolbar.svelte';
+  import LinkPopover from '$lib/components/LinkPopover.svelte';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   interface Props {
@@ -13,10 +14,21 @@
   let editorEl: HTMLDivElement | null = $state(null);
   let actions: ToolbarActions | null = $state(null);
 
+  // Link-popover state. Editor.svelte owns the open/closed flag and
+  // the captured ProseMirror selection range; the LinkPopover
+  // component only knows about a URL string + apply/cancel callbacks
+  // that Editor.svelte hands it. The selection has to be captured
+  // BEFORE the popover mounts because focusing the URL input would
+  // otherwise drop ProseMirror's text selection.
+  let linkOpen: boolean = $state(false);
+  let onLinkApply: ((href: string) => void) | null = $state(null);
+  let onLinkCancel: (() => void) | null = $state(null);
+
   // Phase 0: heavy editor modules are dynamically imported so SvelteKit's
   // SSR pass doesn't try to load the DOM-dependent ProseMirror code.
-  // The schema module itself is pure data structures (safe in SSR) but
-  // we keep it under the same dynamic-import umbrella for consistency.
+  // The schema/keymap/inputrules modules themselves are pure data
+  // structures (safe in SSR) but we keep them under the same dynamic-
+  // import umbrella for consistency.
   let cleanup: (() => void) | null = null;
 
   onMount(async () => {
@@ -29,6 +41,8 @@
       { keymap },
       { baseKeymap, toggleMark, setBlockType, wrapIn },
       { wrapInList },
+      { buildEditorKeymap },
+      { buildInputRules },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -39,6 +53,8 @@
       import('prosemirror-keymap'),
       import('prosemirror-commands'),
       import('prosemirror-schema-list'),
+      import('$lib/editor/keymap'),
+      import('$lib/editor/input-rules'),
       import('y-prosemirror'),
     ]);
 
@@ -56,9 +72,27 @@
 
     const yXmlFragment = ydoc.getXmlFragment('prosemirror');
 
+    // Captured selection for the link popover. We grab the live view's
+    // selection at the moment the popover opens and replay it onto an
+    // addMark transaction when the user submits.
+    let savedSelection: { from: number; to: number } | null = null;
+
+    function captureSelection(): void {
+      const sel = view.state.selection;
+      if (sel.empty) return;
+      savedSelection = { from: sel.from, to: sel.to };
+      linkOpen = true;
+    }
+
+    const editorKeymap = buildEditorKeymap({
+      schema,
+      onLinkRequested: captureSelection,
+    });
+
     const state = EditorState.create({
       schema,
       plugins: [
+        buildInputRules(schema),
         ySyncPlugin(yXmlFragment),
         yUndoPlugin(),
         keymap({
@@ -66,6 +100,7 @@
           'Mod-y': redo,
           'Mod-Shift-z': redo,
         }),
+        keymap(editorKeymap),
         keymap(baseKeymap),
       ],
     });
@@ -92,18 +127,29 @@
       toggleBold: () => run(toggleMark(markTypes.strong)),
       toggleItalic: () => run(toggleMark(markTypes.em)),
       toggleStrike: () => run(toggleMark(markTypes.strike)),
-      toggleLink: (href) => {
-        if (href === null) {
-          run(toggleMark(markTypes.link));
-        } else {
-          run(toggleMark(markTypes.link, { href }));
-        }
-      },
+      openLinkPopover: captureSelection,
       setHeading: (level) => run(setBlockType(nodeTypes.heading, { level })),
       toggleBulletList: () => run(wrapInList(nodeTypes.bullet_list)),
       toggleOrderedList: () => run(wrapInList(nodeTypes.ordered_list)),
       toggleBlockquote: () => run(wrapIn(nodeTypes.blockquote)),
       toggleCodeBlock: () => run(setBlockType(nodeTypes.code_block)),
+    };
+
+    onLinkApply = (href) => {
+      if (savedSelection !== null) {
+        const { from, to } = savedSelection;
+        const tr = view.state.tr.addMark(from, to, markTypes.link.create({ href }));
+        view.dispatch(tr);
+      }
+      linkOpen = false;
+      savedSelection = null;
+      view.focus();
+    };
+
+    onLinkCancel = () => {
+      linkOpen = false;
+      savedSelection = null;
+      view.focus();
     };
 
     cleanup = () => {
@@ -120,6 +166,9 @@
 
 {#if actions}
   <EditorToolbar {actions} />
+{/if}
+{#if linkOpen && onLinkApply && onLinkCancel}
+  <LinkPopover onApply={onLinkApply} onCancel={onLinkCancel} />
 {/if}
 <div
   bind:this={editorEl}

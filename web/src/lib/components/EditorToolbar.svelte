@@ -1,14 +1,14 @@
 <script lang="ts">
-  // W-008 editor toolbar. 11 buttons in 4 groups:
+  // Editor toolbar. 11 buttons in 4 groups:
   //
   //   marks   : Bold, Italic, Strike, Link
   //   blocks  : H1, H2, H3
   //   lists   : Bullet, Ordered
   //   wrapped : Blockquote, Code block
   //
-  // The link button calls window.prompt for the URL — Playwright
-  // intercepts via page.on('dialog'). A real popover is W-009's
-  // Cmd-K-link territory; prompt() is the v1 placeholder.
+  // The Link button defers to Editor.svelte's popover (W-009) — same
+  // path as the Mod-K shortcut, so user-facing behavior is identical
+  // whether the link flow starts at the keyboard or the mouse.
 
   import type { ToolbarActions } from '$lib/editor/actions';
 
@@ -21,12 +21,6 @@
   // state that no longer matches what the user is looking at.
   function holdFocus(e: MouseEvent): void {
     e.preventDefault();
-  }
-
-  function onLinkClick(): void {
-    const url = window.prompt('Link URL (empty = unlink)');
-    if (url === null) return; // user canceled the prompt
-    actions.toggleLink(url.length === 0 ? null : url);
   }
 </script>
 
@@ -63,7 +57,7 @@
     onmousedown={holdFocus}
     data-testid="tb-link"
     aria-label="Link"
-    onclick={onLinkClick}>🔗</button
+    onclick={actions.openLinkPopover}>🔗</button
   >
 
   <span class="sep" aria-hidden="true"></span>
