@@ -1,54 +1,24 @@
-// W-008: editor toolbar — one test per action. Each test creates a
-// fresh note, types content into the ProseMirror editor, applies a
-// toolbar action, and asserts the resulting DOM contains the right
-// node or mark.
+// W-008 + W-009: editor toolbar — one test per action. Each test
+// creates a fresh note, types content into the ProseMirror editor,
+// applies a toolbar action, and asserts the resulting DOM contains
+// the right node or mark.
 //
-// Marks (bold/italic/strike/link) require a non-empty selection; the
+// Marks (bold/italic/strike) require a non-empty selection; the
 // tests use `Meta+A` (Mac) / `Control+A` (others) via Playwright's
 // `ControlOrMeta` modifier alias. Block-type actions (heading, lists,
 // blockquote, code block) only need the caret somewhere in a block.
+// Link goes through the LinkPopover (W-009 replaced W-008's
+// window.prompt placeholder); see editor-shortcuts.test.ts for the
+// Mod-K shortcut variant of the same flow.
 //
-// Link uses window.prompt for the URL — tests intercept with
-// page.on('dialog'). A proper popover ships with W-009 (Cmd-K link).
-//
-// Parallel-run flake (dev only): running all 11 of these alongside
+// Parallel-run flake (dev only): running all of these alongside
 // every other Playwright test under the default multi-worker config
 // can occasionally drop a keystroke or a click under server load.
 // CI uses `workers: 1` (see playwright.config.ts) so it's stable
 // there. Running locally with `--workers 1` reproduces CI behavior.
 
-import { test, expect, type Page } from '@playwright/test';
-import { signIn } from './helpers/auth.js';
-import { createNote } from './helpers/notes.js';
-
-async function openFreshEditor(
-  browser: import('@playwright/test').Browser,
-  titlePrefix: string,
-  initial: string,
-): Promise<{ page: Page; editor: ReturnType<Page['locator']>; close: () => Promise<void> }> {
-  const context = await browser.newContext();
-  await signIn(context);
-  const note = await createNote(context, `${titlePrefix}-${Date.now()}`);
-  const page = await context.newPage();
-  await page.goto(`/n/${note.id}`);
-  const editor = page.getByTestId('editor').locator('.ProseMirror');
-  await editor.waitFor({ state: 'visible' });
-  // The toolbar only mounts once actions are wired up, which happens
-  // at the end of Editor.svelte's async onMount (dynamic imports +
-  // Yjs init). Waiting for it ensures the EditorView is fully ready
-  // before any keystrokes; otherwise the type-then-click sequence
-  // races the setup and we get flaky no-ops under parallelism.
-  await page.getByTestId('editor-toolbar').waitFor({ state: 'visible' });
-  await editor.click();
-  await page.keyboard.type(initial);
-  // Round-trip guard: assert the typed text actually landed in the
-  // editor DOM before any toolbar click. If the EditorView is
-  // mid-Yjs-sync (which can happen under heavy parallel server load),
-  // keystrokes can be lost or overwritten by an incoming snapshot.
-  // Waiting on the DOM tells us the local edit is committed.
-  await expect(editor).toContainText(initial);
-  return { page, editor, close: () => context.close() };
-}
+import { test, expect } from '@playwright/test';
+import { openFreshEditor } from './helpers/editor.js';
 
 test('toolbar: bold wraps selection in <strong>', async ({ browser }) => {
   const { page, editor, close } = await openFreshEditor(browser, 'tb-bold', 'hello');
@@ -74,14 +44,19 @@ test('toolbar: strike wraps selection in <s>', async ({ browser }) => {
   await close();
 });
 
-test('toolbar: link wraps selection in <a href>', async ({ browser }) => {
+test('toolbar: link opens popover, Apply wraps selection in <a href>', async ({ browser }) => {
   const { page, editor, close } = await openFreshEditor(browser, 'tb-link', 'hello');
   await page.keyboard.press('ControlOrMeta+A');
-  // window.prompt for the URL — accept with a stub URL.
+  // Defensive: if anything still tried to open a window.prompt this
+  // listener would auto-dismiss it, so the assertion below would fail
+  // explicitly rather than silently hang.
   page.on('dialog', (d) => {
-    void d.accept('https://example.com/');
+    void d.dismiss();
   });
   await page.getByTestId('tb-link').click();
+  await expect(page.getByTestId('link-popover')).toBeVisible();
+  await page.getByTestId('link-popover-input').fill('https://example.com/');
+  await page.getByTestId('link-popover-input').press('Enter');
   await expect(editor.locator('a[href="https://example.com/"]')).toHaveText('hello');
   await close();
 });
