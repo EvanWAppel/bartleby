@@ -9,8 +9,17 @@
 // bullet_list, ordered_list, list_item, horizontal_rule, image,
 // hard_break) and every mark except `strike`; we add an entry for
 // strike below (`~~text~~`, the CommonMark/GFM convention).
+//
+// W-010: task_list / task_item serialize as GFM task list syntax
+// (`- [ ] foo` / `- [x] done`). renderList prefixes each item with
+// `- `; task_item then writes the `[ ] ` / `[x] ` flag before its
+// content. Task lists don't have the `tight` attr so we pass through
+// the default loose-list flushing — the round-trip preserves shape
+// well enough for FTS / backlink extraction, which is all this
+// serializer feeds.
 
 import * as Y from 'yjs';
+import type { Node } from 'prosemirror-model';
 import { MarkdownSerializer, defaultMarkdownSerializer } from 'prosemirror-markdown';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { schema } from './schema.js';
@@ -21,15 +30,36 @@ import { schema } from './schema.js';
 // backlink extractor + downstream import/export round-trips work.
 const ESCAPED_BACKLINK = /\\\[\\\[([^\]\n]+)\\\]\\\]/g;
 
-const markdownSerializer = new MarkdownSerializer(defaultMarkdownSerializer.nodes, {
-  ...defaultMarkdownSerializer.marks,
-  strike: {
-    open: '~~',
-    close: '~~',
-    mixable: true,
-    expelEnclosingWhitespace: true,
+// MarkdownSerializerState isn't exported as a type from prosemirror-
+// markdown; type the callbacks by hand against the bits we use.
+interface SerializerState {
+  renderList(node: Node, delim: string, firstDelim: (i: number) => string): void;
+  renderContent(node: Node): void;
+  write(text: string): void;
+}
+
+const markdownSerializer = new MarkdownSerializer(
+  {
+    ...defaultMarkdownSerializer.nodes,
+    task_list(state: SerializerState, node: Node): void {
+      state.renderList(node, '  ', () => '- ');
+    },
+    task_item(state: SerializerState, node: Node): void {
+      const checked = node.attrs['checked'] === true;
+      state.write(checked ? '[x] ' : '[ ] ');
+      state.renderContent(node);
+    },
   },
-});
+  {
+    ...defaultMarkdownSerializer.marks,
+    strike: {
+      open: '~~',
+      close: '~~',
+      mixable: true,
+      expelEnclosingWhitespace: true,
+    },
+  },
+);
 
 export function extractMarkdown(ydoc: Y.Doc): string {
   const fragment = ydoc.getXmlFragment('prosemirror');

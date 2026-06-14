@@ -1,0 +1,56 @@
+diff --git a/node_modules/y-prosemirror/src/plugins/sync-plugin.js b/node_modules/y-prosemirror/src/plugins/sync-plugin.js
+index dccfb76..2ca3298 100644
+--- a/node_modules/y-prosemirror/src/plugins/sync-plugin.js
++++ b/node_modules/y-prosemirror/src/plugins/sync-plugin.js
+@@ -618,13 +618,22 @@ export class ProsemirrorBinding {
+       )
+       transaction.changed.forEach(delType)
+       transaction.changedParentTypes.forEach(delType)
+-      const fragmentContent = this.type.toArray().map((t) =>
++      const rawFragment = this.type.toArray().map((t) =>
+         createNodeIfNotExists(
+           /** @type {Y.XmlElement | Y.XmlHook} */ (t),
+           this.prosemirrorView.state.schema,
+           this
+         )
+-      ).filter((n) => n !== null)
++      )
++      // PATCHED: if any top-level YElement failed to create (e.g. a
++      // wrapping input rule's transient empty-children state), skip
++      // the whole replace — otherwise we'd clobber the local doc with
++      // a partial state. The next observer fire will retry once the
++      // children integrate.
++      if (rawFragment.some((n) => n === null)) {
++        return
++      }
++      const fragmentContent = rawFragment.filter((n) => n !== null)
+       // @ts-ignore
+       let tr = this._tr.replace(
+         0,
+@@ -802,10 +811,22 @@ export const createNodeFromYElement = (
+     meta.mapping.set(el, node)
+     return node
+   } catch (e) {
+-    // an error occured while creating the node. This is probably a result of a concurrent action.
+-    /** @type {Y.Doc} */ (el.doc).transact((transaction) => {
+-      /** @type {Y.Item} */ (el._item).delete(transaction)
+-    }, ySyncPluginKey)
++    // PATCHED (bartleby): y-prosemirror originally calls
++    //   el.doc.transact(tr => el._item.delete(tr), ySyncPluginKey)
++    // here, which destroys real user content when the observer fires
++    // mid-Yjs-integration. The error mode we hit is
++    //   RangeError: Unknown node type: list_item
++    // (or bullet_list, blockquote, task_list — anything inserted as a
++    // wrapper by a prosemirror-inputrules wrappingInputRule + atomic
++    // replaceWith) raised by schema.node when the YXmlElement is
++    // visible in the observer but `el.toArray()` still reports zero
++    // children, so we end up trying to build the wrapper from an empty
++    // Fragment. We rebroadcast as null and let the next observer fire
++    // re-attempt creation once the children integrate; the wrapper
++    // survives instead of being deleted from Yjs (which would then
++    // propagate the delete to every connected client and destroy the
++    // user's typing).
++    void e
+     meta.mapping.delete(el)
+     return null
+   }

@@ -1,18 +1,19 @@
 // Bartleby editor schema = prosemirror-schema-basic + list nodes (ul,
-// ol, li) from prosemirror-schema-list + a custom `strike` mark.
+// ol, li) from prosemirror-schema-list + a custom `strike` mark +
+// W-010 task list nodes (task_list, task_item with a `checked` attr).
 //
 // MIRRORS server/src/derived/schema.ts. The Hocuspocus onStoreDocument
 // hook deserializes the YDoc XmlFragment through ProseMirror's schema
 // to extract markdown for FTS + tag + backlink processing (S-009); the
 // two schemas MUST stay in sync or the server will fail to parse docs
-// that contain list nodes or strike marks.
+// that contain list nodes, strike marks, or task items.
 //
 // When a shared monorepo package for editor utilities lands (likely
 // alongside I-001/I-002's markdown parser), promote this module there
 // and have both web and server import it.
 
 import { Schema } from 'prosemirror-model';
-import type { MarkSpec } from 'prosemirror-model';
+import type { MarkSpec, NodeSpec } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
 import { addListNodes } from 'prosemirror-schema-list';
 
@@ -28,7 +29,50 @@ const strikeMark: MarkSpec = {
   },
 };
 
-const nodes = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
+// W-010: task_list / task_item. Modeled as a separate node-type pair
+// from bullet_list / list_item so the markdown serializer (and any
+// future toolbar entry) can distinguish them without inspecting
+// per-item attrs. data-type attributes on the DOM let CSS + Playwright
+// tests target task lists without ambiguity vs. regular <ul>/<li>.
+const taskListNode: NodeSpec = {
+  group: 'block',
+  content: 'task_item+',
+  parseDOM: [{ tag: 'ul[data-type="task-list"]' }],
+  toDOM(): [string, Record<string, string>, number] {
+    return ['ul', { 'data-type': 'task-list' }, 0];
+  },
+};
+
+const taskItemNode: NodeSpec = {
+  attrs: { checked: { default: false } },
+  content: 'paragraph block*',
+  defining: true,
+  parseDOM: [
+    {
+      tag: 'li[data-type="task-item"]',
+      getAttrs(el): Record<string, unknown> {
+        const checked = (el as Element).getAttribute('data-checked');
+        return { checked: checked === 'true' };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, number] {
+    return [
+      'li',
+      {
+        'data-type': 'task-item',
+        'data-checked': String(node.attrs['checked']),
+      },
+      0,
+    ];
+  },
+};
+
+const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
+const nodes = nodesWithLists.append({
+  task_list: taskListNode,
+  task_item: taskItemNode,
+});
 const marks = basicSchema.spec.marks.addToEnd('strike', strikeMark);
 
 export const schema = new Schema({ nodes, marks });
@@ -53,6 +97,8 @@ export const nodeTypes = {
   bullet_list: schema.nodes['bullet_list']!,
   ordered_list: schema.nodes['ordered_list']!,
   list_item: schema.nodes['list_item']!,
+  task_list: schema.nodes['task_list']!,
+  task_item: schema.nodes['task_item']!,
 } as const;
 
 export const markTypes = {
