@@ -43,6 +43,7 @@
       { wrapInList },
       { buildEditorKeymap },
       { buildInputRules },
+      { createTaskItemNodeView },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -55,6 +56,7 @@
       import('prosemirror-schema-list'),
       import('$lib/editor/keymap'),
       import('$lib/editor/input-rules'),
+      import('$lib/editor/task-item-node-view'),
       import('y-prosemirror'),
     ]);
 
@@ -109,7 +111,12 @@
       throw new Error('editor mount point missing');
     }
 
-    const view = new EditorView(editorEl, { state });
+    const view = new EditorView(editorEl, {
+      state,
+      nodeViews: {
+        task_item: createTaskItemNodeView,
+      },
+    });
 
     // Every toolbar action follows the same shape: read the live view
     // state, dispatch the resulting transaction (if the command was
@@ -239,5 +246,37 @@
 
   .editor :global(.ProseMirror s) {
     text-decoration: line-through;
+  }
+
+  /* W-010 task list styling. The <li> renders a checkbox + content;
+     the bullet is suppressed and the checkbox sits inline with the
+     paragraph. Checked items get a strikethrough on the visible
+     content so completed work reads as such. */
+  .editor :global(.ProseMirror ul[data-type='task-list']) {
+    list-style: none;
+    padding-left: 0.5rem;
+  }
+
+  .editor :global(.ProseMirror li[data-type='task-item']) {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    margin: 0.2rem 0;
+  }
+
+  .editor :global(.ProseMirror li[data-type='task-item'] > input[type='checkbox']) {
+    flex: 0 0 auto;
+    margin-top: 0.25rem;
+    cursor: pointer;
+  }
+
+  .editor :global(.ProseMirror li[data-type='task-item'] > [data-task-content]) {
+    flex: 1;
+  }
+
+  .editor
+    :global(.ProseMirror li[data-type='task-item'][data-checked='true'] > [data-task-content]) {
+    text-decoration: line-through;
+    color: #888;
   }
 </style>

@@ -89,6 +89,42 @@ describe('extractMarkdown (S-009)', () => {
     expect(out).toContain('2. second');
   });
 
+  it('serializes a task_list with unchecked items (W-010)', () => {
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('task_list', null, [
+          schema.node('task_item', { checked: false }, [
+            schema.node('paragraph', null, [schema.text('groceries')]),
+          ]),
+          schema.node('task_item', { checked: false }, [
+            schema.node('paragraph', null, [schema.text('laundry')]),
+          ]),
+        ]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('- [ ] groceries');
+    expect(out).toContain('- [ ] laundry');
+  });
+
+  it('serializes a task_list with mixed checked/unchecked items (W-010)', () => {
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('task_list', null, [
+          schema.node('task_item', { checked: true }, [
+            schema.node('paragraph', null, [schema.text('done')]),
+          ]),
+          schema.node('task_item', { checked: false }, [
+            schema.node('paragraph', null, [schema.text('still pending')]),
+          ]),
+        ]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('- [x] done');
+    expect(out).toContain('- [ ] still pending');
+  });
+
   it('serializes the strike mark as ~~text~~', () => {
     const strike = schema.marks['strike']!;
     const doc = buildYDoc(() =>
