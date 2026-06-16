@@ -17,6 +17,11 @@
 // the default loose-list flushing — the round-trip preserves shape
 // well enough for FTS / backlink extraction, which is all this
 // serializer feeds.
+//
+// W-011: code_block emits a GFM fenced block (```lang\n…\n```). When
+// language is the default 'text', we drop the tag and emit a plain
+// fence so the markdown reads naturally in tools that don't recognize
+// our "text" sentinel.
 
 import * as Y from 'yjs';
 import type { Node } from 'prosemirror-model';
@@ -36,6 +41,8 @@ interface SerializerState {
   renderList(node: Node, delim: string, firstDelim: (i: number) => string): void;
   renderContent(node: Node): void;
   write(text: string): void;
+  text(text: string, escape?: boolean): void;
+  closeBlock(node: Node): void;
 }
 
 const markdownSerializer = new MarkdownSerializer(
@@ -48,6 +55,14 @@ const markdownSerializer = new MarkdownSerializer(
       const checked = node.attrs['checked'] === true;
       state.write(checked ? '[x] ' : '[ ] ');
       state.renderContent(node);
+    },
+    code_block(state: SerializerState, node: Node): void {
+      const lang = String(node.attrs['language'] ?? 'text');
+      const fenceLang = lang === 'text' ? '' : lang;
+      state.write('```' + fenceLang + '\n');
+      state.text(node.textContent, false);
+      state.write('\n```');
+      state.closeBlock(node);
     },
   },
   {

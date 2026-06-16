@@ -125,6 +125,32 @@ describe('extractMarkdown (S-009)', () => {
     expect(out).toContain('- [ ] still pending');
   });
 
+  it('serializes a code_block with a language as a fenced ```lang block (W-011)', () => {
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('code_block', { language: 'ts' }, [schema.text('const x = 1;')]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('```ts');
+    expect(out).toContain('const x = 1;');
+  });
+
+  it('serializes a code_block with language="text" as a bare fence (W-011)', () => {
+    // 'text' is our default — markdown's fence is plain ``` (no language)
+    // so unhighlighted blocks round-trip through standard tooling without
+    // a fake `text` language tag leaking out.
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('code_block', { language: 'text' }, [schema.text('plain content')]),
+      ]),
+    );
+    const out = extractMarkdown(doc);
+    expect(out).toContain('```\n');
+    expect(out).not.toContain('```text');
+    expect(out).toContain('plain content');
+  });
+
   it('serializes the strike mark as ~~text~~', () => {
     const strike = schema.marks['strike']!;
     const doc = buildYDoc(() =>

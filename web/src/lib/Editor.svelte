@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import EditorToolbar from '$lib/components/EditorToolbar.svelte';
   import LinkPopover from '$lib/components/LinkPopover.svelte';
+  import CodeLangPopover from '$lib/components/CodeLangPopover.svelte';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   interface Props {
@@ -24,6 +25,17 @@
   let onLinkApply: ((href: string) => void) | null = $state(null);
   let onLinkCancel: (() => void) | null = $state(null);
 
+  // W-011 code-block language picker. The NodeView for code_block
+  // surfaces a "Lang: <id> ▾" button per block; clicking it asks
+  // Editor.svelte to open this popover with the captured block
+  // position. Apply dispatches setNodeMarkup against that pos. Same
+  // pattern as LinkPopover — Svelte component lives at this layer
+  // because the NodeView is plain DOM and can't host Svelte UI.
+  let codeLangOpen: boolean = $state(false);
+  let codeLangCurrent: string = $state('text');
+  let onCodeLangApply: ((lang: string) => void) | null = $state(null);
+  let onCodeLangCancel: (() => void) | null = $state(null);
+
   // Phase 0: heavy editor modules are dynamically imported so SvelteKit's
   // SSR pass doesn't try to load the DOM-dependent ProseMirror code.
   // The schema/keymap/inputrules modules themselves are pure data
@@ -44,6 +56,8 @@
       { buildEditorKeymap },
       { buildInputRules },
       { createTaskItemNodeView },
+      { createCodeBlockNodeViewFactory },
+      { buildHighlightPlugin },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -57,6 +71,8 @@
       import('$lib/editor/keymap'),
       import('$lib/editor/input-rules'),
       import('$lib/editor/task-item-node-view'),
+      import('$lib/editor/code-block-node-view'),
+      import('$lib/editor/highlight-plugin'),
       import('y-prosemirror'),
     ]);
 
@@ -91,6 +107,24 @@
       onLinkRequested: captureSelection,
     });
 
+    // W-011 code-block language picker. The NodeView signals which
+    // code_block the user clicked via its pos; we capture that here so
+    // apply/cancel can dispatch against the right node even if the
+    // selection drifts in the meantime.
+    let codeLangSavedPos: number | null = null;
+    function requestCodeLang(pos: number, currentLang: string): void {
+      codeLangSavedPos = pos;
+      codeLangCurrent = currentLang;
+      codeLangOpen = true;
+    }
+
+    // W-011 highlight plugin is async (it dynamic-imports Shiki on
+    // first use). We await it BEFORE creating EditorState so it sits
+    // in the plugin list from the start; the alternative — reconfigure
+    // mid-flight — would require dispatching a state.reconfigure tx
+    // that y-prosemirror's ySyncPlugin doesn't tolerate well.
+    const highlightPlugin = await buildHighlightPlugin({ schema });
+
     const state = EditorState.create({
       schema,
       plugins: [
@@ -104,6 +138,7 @@
         }),
         keymap(editorKeymap),
         keymap(baseKeymap),
+        highlightPlugin,
       ],
     });
 
@@ -115,6 +150,7 @@
       state,
       nodeViews: {
         task_item: createTaskItemNodeView,
+        code_block: createCodeBlockNodeViewFactory({ onRequest: requestCodeLang }),
       },
     });
 
@@ -159,6 +195,29 @@
       view.focus();
     };
 
+    onCodeLangApply = (lang) => {
+      if (codeLangSavedPos !== null) {
+        const pos = codeLangSavedPos;
+        const node = view.state.doc.nodeAt(pos);
+        if (node !== null && node.type === nodeTypes.code_block) {
+          const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            language: lang,
+          });
+          view.dispatch(tr);
+        }
+      }
+      codeLangOpen = false;
+      codeLangSavedPos = null;
+      view.focus();
+    };
+
+    onCodeLangCancel = () => {
+      codeLangOpen = false;
+      codeLangSavedPos = null;
+      view.focus();
+    };
+
     cleanup = () => {
       view.destroy();
       provider.destroy();
@@ -176,6 +235,13 @@
 {/if}
 {#if linkOpen && onLinkApply && onLinkCancel}
   <LinkPopover onApply={onLinkApply} onCancel={onLinkCancel} />
+{/if}
+{#if codeLangOpen && onCodeLangApply && onCodeLangCancel}
+  <CodeLangPopover
+    currentLanguage={codeLangCurrent}
+    onApply={onCodeLangApply}
+    onCancel={onCodeLangCancel}
+  />
 {/if}
 <div
   bind:this={editorEl}
@@ -228,7 +294,13 @@
     color: #555;
   }
 
+  /* W-011 code block. The NodeView nests a <button class="code-lang-button">
+     + a <code> contentDOM inside the <pre>; we relative-position the
+     pre so the button can absolute-position itself in the corner
+     without escaping the block. The button text is rendered by the
+     NodeView (not a Svelte component) so the user sees "ts ▾" etc. */
   .editor :global(.ProseMirror pre) {
+    position: relative;
     background: #f5f5f5;
     padding: 0.5rem 0.75rem;
     border-radius: 4px;
@@ -236,6 +308,29 @@
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
       monospace;
     overflow-x: auto;
+  }
+
+  .editor :global(.ProseMirror pre > .code-lang-button) {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    appearance: none;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #555;
+    border-radius: 4px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.75rem;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+      monospace;
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  .editor :global(.ProseMirror pre > .code-lang-button:hover) {
+    border-color: #5b8def;
+    color: #333;
   }
 
   .editor :global(.ProseMirror ul),
