@@ -2,7 +2,7 @@
 // hook deserializes the YDoc XmlFragment through this schema to extract
 // markdown for FTS + tag + backlink processing (S-009). The two schemas
 // MUST stay in sync or the server will fail to parse docs that contain
-// list nodes, strike marks, or task items.
+// list nodes, strike marks, task items, or code block language tags.
 //
 // When a shared monorepo package for editor utilities lands (likely
 // alongside I-001/I-002's markdown parser), promote this module there
@@ -66,8 +66,34 @@ const taskItemNode: NodeSpec = {
   },
 };
 
+// W-011: override the basic code_block to carry a `language` attr.
+// Default 'text' is the bare-fence case for the markdown serializer.
+const codeBlockNode: NodeSpec = {
+  attrs: { language: { default: 'text' } },
+  content: 'text*',
+  marks: '',
+  group: 'block',
+  code: true,
+  defining: true,
+  parseDOM: [
+    {
+      tag: 'pre',
+      preserveWhitespace: 'full',
+      getAttrs(el): Record<string, unknown> {
+        const lang = (el as { getAttribute(name: string): string | null }).getAttribute(
+          'data-language',
+        );
+        return { language: lang === null || lang === '' ? 'text' : lang };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, [string, number]] {
+    return ['pre', { 'data-language': String(node.attrs['language']) }, ['code', 0]];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
-const nodes = nodesWithLists.append({
+const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
 });

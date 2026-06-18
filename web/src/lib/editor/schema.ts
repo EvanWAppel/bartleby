@@ -1,12 +1,14 @@
 // Bartleby editor schema = prosemirror-schema-basic + list nodes (ul,
 // ol, li) from prosemirror-schema-list + a custom `strike` mark +
-// W-010 task list nodes (task_list, task_item with a `checked` attr).
+// W-010 task list nodes (task_list, task_item with a `checked` attr) +
+// W-011 overrides code_block to carry a `language` attr.
 //
 // MIRRORS server/src/derived/schema.ts. The Hocuspocus onStoreDocument
 // hook deserializes the YDoc XmlFragment through ProseMirror's schema
 // to extract markdown for FTS + tag + backlink processing (S-009); the
 // two schemas MUST stay in sync or the server will fail to parse docs
-// that contain list nodes, strike marks, or task items.
+// that contain list nodes, strike marks, task items, or code block
+// language tags.
 //
 // When a shared monorepo package for editor utilities lands (likely
 // alongside I-001/I-002's markdown parser), promote this module there
@@ -68,8 +70,35 @@ const taskItemNode: NodeSpec = {
   },
 };
 
+// W-011: override the basic code_block to carry a `language` attr.
+// Default 'text' means "no syntax highlighting" — the markdown
+// serializer also drops the language tag in that case so the round-
+// tripped fence is plain ```. data-language on <pre> drives both the
+// CSS hook and the highlight plugin's per-block dispatch.
+const codeBlockNode: NodeSpec = {
+  attrs: { language: { default: 'text' } },
+  content: 'text*',
+  marks: '',
+  group: 'block',
+  code: true,
+  defining: true,
+  parseDOM: [
+    {
+      tag: 'pre',
+      preserveWhitespace: 'full',
+      getAttrs(el): Record<string, unknown> {
+        const lang = (el as HTMLElement).getAttribute?.('data-language');
+        return { language: lang === null || lang === undefined || lang === '' ? 'text' : lang };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, [string, number]] {
+    return ['pre', { 'data-language': String(node.attrs['language']) }, ['code', 0]];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
-const nodes = nodesWithLists.append({
+const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
 });
