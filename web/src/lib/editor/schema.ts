@@ -3,7 +3,9 @@
 // W-010 task list nodes (task_list, task_item with a `checked` attr) +
 // W-011 overrides code_block to carry a `language` attr +
 // W-012 adds a `backlink` inline atom node (targetId + title) that
-// renders as a clickable <a> and round-trips to `[[title]]` in markdown.
+// renders as a clickable <a> and round-trips to `[[title]]` in markdown +
+// W-013 adds a `mention` inline atom node (email + displayName) that
+// renders as a styled <span> and round-trips to `@email` in markdown.
 //
 // MIRRORS server/src/derived/schema.ts. The Hocuspocus onStoreDocument
 // hook deserializes the YDoc XmlFragment through ProseMirror's schema
@@ -144,11 +146,58 @@ const backlinkNode: NodeSpec = {
   },
 };
 
+// W-013: mention is an inline atom node carrying a stable email (works
+// even for allowlist entries that haven't signed in yet — no FK to fake
+// up) and the displayName captured at insert time (so the rendered
+// chip doesn't need a server round-trip to label itself). Atoms are
+// non-editable as a unit — backspace removes the whole chip.
+//
+// Round-trip: the markdown serializer emits `@email` so M-001's
+// mention-extraction step has a stable identifier that uniquely resolves
+// to a user_id without depending on display names (which collide and
+// drift on rename).
+const mentionNode: NodeSpec = {
+  attrs: {
+    email: { default: '' },
+    displayName: { default: '' },
+  },
+  group: 'inline',
+  inline: true,
+  atom: true,
+  parseDOM: [
+    {
+      tag: 'span[data-mention]',
+      getAttrs(el): Record<string, unknown> {
+        const e = el as HTMLElement;
+        return {
+          email: e.getAttribute('data-mention-email') ?? '',
+          displayName: e.getAttribute('data-mention-display') ?? '',
+        };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, string] {
+    const email = String(node.attrs['email']);
+    const displayName = String(node.attrs['displayName']);
+    const label = displayName.length > 0 ? `@${displayName}` : `@${email}`;
+    return [
+      'span',
+      {
+        'data-mention': '',
+        'data-mention-email': email,
+        'data-mention-display': displayName,
+      },
+      label,
+    ];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
 const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
   backlink: backlinkNode,
+  mention: mentionNode,
 });
 const marks = basicSchema.spec.marks.addToEnd('strike', strikeMark);
 
@@ -177,6 +226,7 @@ export const nodeTypes = {
   task_list: schema.nodes['task_list']!,
   task_item: schema.nodes['task_item']!,
   backlink: schema.nodes['backlink']!,
+  mention: schema.nodes['mention']!,
 } as const;
 
 export const markTypes = {

@@ -24,6 +24,13 @@ export interface UpsertUserInput {
 export interface SessionStore {
   upsertUserByEmail(input: UpsertUserInput): Promise<User>;
   getUserById(id: string): Promise<User | null>;
+  /**
+   * Returns every user the store knows about (i.e., has been seen via
+   * upsertUserByEmail), sorted by lowercase email. W-013's GET /users
+   * uses this as the signed-in half of the allowlist∪users union it
+   * serves to the @mention picker.
+   */
+  listUsers(): Promise<User[]>;
   revokeJti(jti: string): Promise<void>;
   isJtiRevoked(jti: string): Promise<boolean>;
 }
@@ -87,6 +94,10 @@ export function createInMemorySessionStore(): SessionStore {
 
     async getUserById(id: string): Promise<User | null> {
       return usersById.get(id) ?? null;
+    },
+
+    async listUsers(): Promise<User[]> {
+      return [...usersByEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
     },
 
     async revokeJti(jti: string): Promise<void> {
