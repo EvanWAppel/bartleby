@@ -10,12 +10,26 @@
   import { UsersStore } from '$lib/state/users-store.svelte';
   import type { ToolbarActions } from '$lib/editor/actions';
 
+  // W-014 / C-001: the current user's identity flows from
+  // +layout.server.ts (via JWT decode in hooks.server.ts) so the editor
+  // can publish { name, color } over Yjs awareness without a /auth/me
+  // round-trip. Optional because callers without a signed-in session
+  // (e.g. Phase 0's hardcoded vertical-slice fixture) still mount the
+  // editor; their cursor just renders to other clients with the
+  // y-prosemirror defaults (orange caret, "User: <clientId>" label).
+  interface UserProp {
+    id: string;
+    display_name: string;
+    color: string;
+  }
+
   interface Props {
     room?: string;
     serverUrl?: string;
+    user?: UserProp;
   }
 
-  let { room, serverUrl = 'ws://127.0.0.1:1234' }: Props = $props();
+  let { room, serverUrl = 'ws://127.0.0.1:1234', user }: Props = $props();
 
   let editorEl: HTMLDivElement | null = $state(null);
   let actions: ToolbarActions | null = $state(null);
@@ -111,7 +125,7 @@
       import('y-prosemirror'),
     ]);
 
-    const { ySyncPlugin, yUndoPlugin, undo, redo } = yProsemirror;
+    const { ySyncPlugin, yUndoPlugin, yCursorPlugin, undo, redo } = yProsemirror;
 
     const resolvedRoom =
       room ?? new URLSearchParams(window.location.search).get('room') ?? 'vertical-slice';
@@ -122,6 +136,18 @@
       name: resolvedRoom,
       document: ydoc,
     });
+
+    // W-014 / C-001: publish { name, color } via the provider's Yjs
+    // awareness so other clients (yCursorPlugin) render us as a colored
+    // caret with a name label. Hocuspocus relays awareness updates over
+    // the same WebSocket; no server changes needed beyond the existing
+    // provider setup.
+    if (user !== undefined) {
+      provider.awareness?.setLocalStateField('user', {
+        name: user.display_name,
+        color: user.color,
+      });
+    }
 
     const yXmlFragment = ydoc.getXmlFragment('prosemirror');
 
@@ -215,12 +241,25 @@
       },
     });
 
+    // W-014 / C-001: yCursorPlugin renders remote awareness states as
+    // PM decorations — a colored caret + a label span carrying user.name.
+    // We deliberately leave the cursorBuilder + selectionBuilder as
+    // defaults (style-via-CSS classes `ProseMirror-yjs-cursor` /
+    // `ProseMirror-yjs-selection`), which is what the y-prosemirror
+    // defaults emit. Only render cursors when we actually have a
+    // provider awareness — Phase 0's hardcoded fixture might miss it.
+    const remoteCursorPlugins =
+      provider.awareness !== undefined && provider.awareness !== null
+        ? [yCursorPlugin(provider.awareness)]
+        : [];
+
     const state = EditorState.create({
       schema,
       plugins: [
         buildInputRules(schema),
         ySyncPlugin(yXmlFragment),
         yUndoPlugin(),
+        ...remoteCursorPlugins,
         keymap({
           'Mod-z': undo,
           'Mod-y': redo,
@@ -434,6 +473,44 @@
     outline: none;
     min-height: 10rem;
   }
+
+  /* W-014 / C-001 presence cursors. y-prosemirror's defaultCursorBuilder
+     emits <span class="ProseMirror-yjs-cursor" style="border-color: …">
+     containing a nested <div style="background-color: …">{name}</div>.
+     We give the caret a thin colored border on the left to read as a
+     vertical bar, and the inner <div> rides above the caret as a
+     readable name pill. defaultSelectionBuilder paints remote
+     selections via a translucent background (the alpha suffix `70`
+     is supplied by the builder), so we only style the class for
+     readability tweaks. */
+  .editor :global(.ProseMirror-yjs-cursor) {
+    position: relative;
+    margin-left: -1px;
+    margin-right: -1px;
+    border-left: 2px solid;
+    border-right: none;
+    word-break: normal;
+    pointer-events: none;
+  }
+
+  .editor :global(.ProseMirror-yjs-cursor > div) {
+    position: absolute;
+    top: -1.1em;
+    left: -2px;
+    font-size: 0.7rem;
+    line-height: 1;
+    color: #fff;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    white-space: nowrap;
+    font-family: system-ui, sans-serif;
+    font-weight: 500;
+    user-select: none;
+  }
+
+  /* .ProseMirror-yjs-selection styling is delivered inline by
+     y-prosemirror's defaultSelectionBuilder (background-color with an
+     alpha suffix). No CSS rules needed here. */
 
   .editor :global(.ProseMirror p) {
     margin: 0 0 0.5rem;
