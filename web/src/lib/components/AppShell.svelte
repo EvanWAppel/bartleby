@@ -1,10 +1,13 @@
 <script lang="ts">
-  // W-003 app shell. Sidebar (W-004) now lives in its own component
-  // so it can own its polling state. Right pane content (W-015 tabs)
-  // is still a placeholder.
+  // W-003 app shell. Sidebar (W-004) lives in its own component; the
+  // right pane (W-015) renders NoteRightPane on /n/[id] and a generic
+  // hint elsewhere — the tabs (Comments / Backlinks / History) only
+  // make sense in the context of a single note.
 
   import type { Snippet } from 'svelte';
+  import { page } from '$app/state';
   import Sidebar from './Sidebar.svelte';
+  import NoteRightPane from './NoteRightPane.svelte';
 
   interface Props {
     user: { display_name: string; color: string } | null;
@@ -12,6 +15,8 @@
   }
 
   let { user, children }: Props = $props();
+
+  let currentNoteId = $derived(typeof page.params['id'] === 'string' ? page.params['id'] : null);
 </script>
 
 <div class="shell" data-testid="app-shell">
@@ -22,7 +27,15 @@
   </main>
 
   <aside class="rightpane" data-testid="right-pane" aria-label="Note details">
-    <p class="hint">Comments / Backlinks / History tabs land in W-015.</p>
+    {#if currentNoteId !== null}
+      <!-- {#key currentNoteId} forces remount on /n/a → /n/b so
+           NoteRightPane re-reads localStorage with the new noteId. -->
+      {#key currentNoteId}
+        <NoteRightPane noteId={currentNoteId} />
+      {/key}
+    {:else}
+      <p class="hint">Open a note to see comments, backlinks, and history.</p>
+    {/if}
   </aside>
 </div>
 

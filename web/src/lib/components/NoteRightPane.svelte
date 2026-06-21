@@ -1,0 +1,159 @@
+<script lang="ts">
+  // W-015: right pane tabs (Comments / Backlinks / History). Tab CONTENT
+  // is intentionally placeholder — the real panes ship with W-017
+  // (comments), W-016 (backlinks), W-019 (history/snapshots).
+  //
+  // The active tab is persisted per note in localStorage so coming back
+  // to a note feels sticky to whichever pane you were just reading. We
+  // deliberately don't fall back to a global "last selected" — different
+  // notes have different ergonomics (a research note might live in
+  // Backlinks; a doc with active reviewers might live in Comments) and
+  // a global default would constantly stomp those preferences.
+  //
+  // Default tab on first visit: Comments — it's the most active surface
+  // in a collaborative editor and the one a returning user is most
+  // likely to want at-a-glance. Easy to flip if telemetry says otherwise.
+
+  import { onMount } from 'svelte';
+
+  type RightPaneTab = 'comments' | 'backlinks' | 'history';
+
+  const TABS: { id: RightPaneTab; label: string; placeholder: string }[] = [
+    { id: 'comments', label: 'Comments', placeholder: 'Comments will appear here. (W-017)' },
+    { id: 'backlinks', label: 'Backlinks', placeholder: 'Backlinks will appear here. (W-016)' },
+    { id: 'history', label: 'History', placeholder: 'History will appear here. (W-019)' },
+  ];
+
+  const DEFAULT_TAB: RightPaneTab = 'comments';
+
+  // The parent (AppShell) keys this component on noteId so it remounts on
+  // every note navigation — onMount re-fires and we read the per-note
+  // tab fresh from localStorage. This avoids a $effect racing the click
+  // handler (the effect would re-read localStorage on every reactive
+  // update and stomp the user's just-clicked choice).
+  interface Props {
+    noteId: string;
+  }
+
+  let { noteId }: Props = $props();
+
+  function storageKey(id: string): string {
+    return `bartleby:rightpane:tab:${id}`;
+  }
+
+  function isTab(v: unknown): v is RightPaneTab {
+    return v === 'comments' || v === 'backlinks' || v === 'history';
+  }
+
+  // SSR safety: `localStorage` doesn't exist on the server. Initial render
+  // uses DEFAULT_TAB; onMount upgrades to the persisted value.
+  let activeTab: RightPaneTab = $state(DEFAULT_TAB);
+
+  onMount(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey(noteId));
+      if (isTab(raw)) activeTab = raw;
+    } catch {
+      // localStorage can throw in some private-browsing modes; fall back
+      // silently to the default so the UI still works.
+    }
+  });
+
+  function select(tab: RightPaneTab): void {
+    activeTab = tab;
+    try {
+      window.localStorage.setItem(storageKey(noteId), tab);
+    } catch {
+      // ditto — silent fall-through. The in-memory state already
+      // updated so the user sees their click take effect; only the
+      // persistence side is best-effort.
+    }
+  }
+</script>
+
+<div class="rightpane-inner" data-testid="note-right-pane">
+  <div class="tablist" role="tablist" aria-label="Note details" data-testid="right-pane-tablist">
+    {#each TABS as tab (tab.id)}
+      <button
+        type="button"
+        role="tab"
+        id={`right-pane-tab-${tab.id}`}
+        aria-controls={`right-pane-panel-${tab.id}`}
+        aria-selected={activeTab === tab.id}
+        tabindex={activeTab === tab.id ? 0 : -1}
+        class="tab"
+        class:active={activeTab === tab.id}
+        data-testid={`right-pane-tab-${tab.id}`}
+        data-active={activeTab === tab.id}
+        onclick={() => select(tab.id)}
+      >
+        {tab.label}
+      </button>
+    {/each}
+  </div>
+
+  {#each TABS as tab (tab.id)}
+    {#if activeTab === tab.id}
+      <div
+        role="tabpanel"
+        id={`right-pane-panel-${tab.id}`}
+        aria-labelledby={`right-pane-tab-${tab.id}`}
+        class="panel"
+        data-testid={`right-pane-panel-${tab.id}`}
+      >
+        <p class="placeholder">{tab.placeholder}</p>
+      </div>
+    {/if}
+  {/each}
+</div>
+
+<style>
+  .rightpane-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0.75rem;
+  }
+
+  .tablist {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .tab {
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: -1px;
+    color: #555;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .tab:hover {
+    color: #222;
+  }
+
+  .tab.active {
+    color: #5b8def;
+    border-bottom-color: #5b8def;
+    font-weight: 500;
+  }
+
+  .panel {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .placeholder {
+    color: #888;
+    font-size: 0.85rem;
+    font-style: italic;
+    margin: 0;
+  }
+</style>
