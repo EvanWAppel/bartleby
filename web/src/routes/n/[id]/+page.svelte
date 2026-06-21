@@ -10,7 +10,14 @@
   import type { NoteSummary } from '$lib/api/notes';
 
   interface Props {
-    data: { id: string; note: NoteSummary };
+    data: {
+      id: string;
+      note: NoteSummary;
+      // user is merged in from +layout.server.ts; we pass it down to the
+      // Editor so W-014 presence can publish { name, color } via the
+      // Hocuspocus provider's Yjs awareness without a /auth/me fetch.
+      user?: { id: string; display_name: string; color: string };
+    };
   }
 
   let { data }: Props = $props();
@@ -21,7 +28,7 @@
     <TitleEditor id={data.id} title={data.note.title} />
     <TagChipEditor id={data.id} tags={data.note.tags} />
   {/key}
-  <Editor room={data.id} />
+  <Editor room={data.id} user={data.user} />
 </div>
 
 <div class="mobile">
