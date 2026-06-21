@@ -28,6 +28,11 @@
 // don't emit the targetId in the markdown: the extractor goes from
 // title -> id via noteTitlesHistory, and exporting raw ids would make
 // the markdown export brittle to id changes.
+//
+// W-013: mention inline atom emits `@email`. Email is the stable
+// identifier (always present even for un-signed-in allowlist entries)
+// and uniquely resolves to a user_id when M-001 later wires up the
+// mentions table.
 
 import * as Y from 'yjs';
 import type { Node } from 'prosemirror-model';
@@ -74,6 +79,13 @@ const markdownSerializer = new MarkdownSerializer(
       // Emit raw `[[title]]` — `text(..., false)` skips markdown
       // escaping so the brackets don't get backslashed into oblivion.
       state.text(`[[${String(node.attrs['title'])}]]`, false);
+    },
+    mention(state: SerializerState, node: Node): void {
+      // Emit `@email`. We ignore displayName entirely in the markdown
+      // form — email is the stable identifier M-001's extractor needs,
+      // and embedding displayName would only invite drift after the
+      // user renames themselves.
+      state.text(`@${String(node.attrs['email'])}`, false);
     },
   },
   {

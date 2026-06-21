@@ -66,6 +66,30 @@ describe('in-memory session store (A-001..A-005)', () => {
       expect(fetched?.email).toBe('alice@example.com');
       expect(await store.getUserById('nope')).toBeNull();
     });
+
+    // W-013: listUsers powers the GET /users mention picker. Order is
+    // by lowercase email so the picker (and tests) get a stable list.
+    it('listUsers returns every upserted user, sorted by email', async () => {
+      expect(await store.listUsers()).toEqual([]);
+      await store.upsertUserByEmail({ email: 'charlie@example.com', displayName: 'Charlie' });
+      await store.upsertUserByEmail({ email: 'Alice@Example.com', displayName: 'Alice' });
+      await store.upsertUserByEmail({ email: 'bob@example.com', displayName: 'Bob' });
+      const users = await store.listUsers();
+      expect(users.map((u) => u.email)).toEqual([
+        'alice@example.com',
+        'bob@example.com',
+        'charlie@example.com',
+      ]);
+      expect(users.map((u) => u.displayName)).toEqual(['Alice', 'Bob', 'Charlie']);
+    });
+
+    it('listUsers reflects displayName changes after a re-upsert', async () => {
+      await store.upsertUserByEmail({ email: 'alice@example.com', displayName: 'Alice' });
+      await store.upsertUserByEmail({ email: 'alice@example.com', displayName: 'Alice II' });
+      const users = await store.listUsers();
+      expect(users).toHaveLength(1);
+      expect(users[0]?.displayName).toBe('Alice II');
+    });
   });
 
   describe('jti revocation', () => {

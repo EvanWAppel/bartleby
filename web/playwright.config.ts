@@ -10,7 +10,10 @@ const bartlebyServerEnv = {
   BARTLEBY_BIND_ADDRESS: '127.0.0.1',
   PUBLIC_BASE_URL: 'http://127.0.0.1:5173',
   SESSION_SECRET: 'test-only-session-secret-must-be-at-least-32-chars',
-  BARTLEBY_ALLOWED_EMAILS: 'test@example.com',
+  // Includes a few extra non-signed-in entries so the W-013 mention
+  // picker has both "signed-in" (test@example.com via the dev sign-in
+  // helper) and "allowlist-only" (alice/bob) options to display.
+  BARTLEBY_ALLOWED_EMAILS: 'test@example.com,alice@example.com,bob@example.com',
   GOOGLE_CLIENT_ID: 'test-client-id',
   GOOGLE_CLIENT_SECRET: 'test-client-secret',
   // Mounts POST /auth/dev/sign-in so tests can skip the OAuth dance.

@@ -5,7 +5,9 @@
   import LinkPopover from '$lib/components/LinkPopover.svelte';
   import CodeLangPopover from '$lib/components/CodeLangPopover.svelte';
   import BacklinkPickerPopover from '$lib/components/BacklinkPickerPopover.svelte';
+  import MentionPickerPopover from '$lib/components/MentionPickerPopover.svelte';
   import { NotesStore } from '$lib/state/notes-store.svelte';
+  import { UsersStore } from '$lib/state/users-store.svelte';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   interface Props {
@@ -28,6 +30,17 @@
   let onBacklinkApply: ((targetId: string, title: string) => void) | null = $state(null);
   let onBacklinkCancel: (() => void) | null = $state(null);
   const notesStore = new NotesStore();
+
+  // W-013 mention picker. Same shape as the backlink picker — the
+  // trigger plugin reports an active `@<query>` and we mirror that into
+  // Svelte $state so MentionPickerPopover mounts/unmounts. UsersStore
+  // fetches /users on a slow poll (operator-edited allowlist, no need
+  // for sub-second freshness).
+  let mentionOpen: boolean = $state(false);
+  let mentionQuery: string = $state('');
+  let onMentionApply: ((email: string, displayName: string) => void) | null = $state(null);
+  let onMentionCancel: (() => void) | null = $state(null);
+  const usersStore = new UsersStore();
 
   // Link-popover state. Editor.svelte owns the open/closed flag and
   // the captured ProseMirror selection range; the LinkPopover
@@ -74,6 +87,8 @@
       { buildHighlightPlugin },
       { buildBacklinkTriggerPlugin, buildApplyTransaction: buildBacklinkApplyTx },
       { createBacklinkNodeViewFactory },
+      { buildMentionTriggerPlugin, buildApplyTransaction: buildMentionApplyTx },
+      { createMentionNodeView },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -91,6 +106,8 @@
       import('$lib/editor/highlight-plugin'),
       import('$lib/editor/backlink-trigger-plugin'),
       import('$lib/editor/backlink-node-view'),
+      import('$lib/editor/mention-trigger-plugin'),
+      import('$lib/editor/mention-node-view'),
       import('y-prosemirror'),
     ]);
 
@@ -171,6 +188,33 @@
       },
     });
 
+    // W-013 mention trigger plugin. Same shape as the backlink plugin —
+    // the plugin reports `@<query>` activity via onChange; we mirror it
+    // into Svelte $state for the popover to consume. mentionTriggerStart
+    // is captured so the apply transaction can replace the right range
+    // even if the cursor moves.
+    let mentionTriggerStart: number | null = null;
+    const mentionTriggerPlugin = await buildMentionTriggerPlugin({
+      schema,
+      onChange(status) {
+        if (status === null) {
+          mentionTriggerStart = null;
+          mentionOpen = false;
+          mentionQuery = '';
+          return;
+        }
+        mentionTriggerStart = status.triggerStart;
+        mentionQuery = status.query;
+        mentionOpen = true;
+      },
+      onEscape() {
+        // Closing only; the plugin's suppression bookkeeping keeps the
+        // popover dormant until the user types a fresh `@`. No doc
+        // mutation — the literal `@query` text stays.
+        mentionOpen = false;
+      },
+    });
+
     const state = EditorState.create({
       schema,
       plugins: [
@@ -186,6 +230,7 @@
         keymap(baseKeymap),
         highlightPlugin,
         backlinkTriggerPlugin,
+        mentionTriggerPlugin,
       ],
     });
 
@@ -203,6 +248,7 @@
             void goto(path);
           },
         }),
+        mention: createMentionNodeView,
       },
     });
 
@@ -295,13 +341,37 @@
       view.focus();
     };
 
+    onMentionApply = (email, displayName) => {
+      if (mentionTriggerStart !== null) {
+        const tr = buildMentionApplyTx(view.state, mentionTriggerStart, email, displayName);
+        if (tr !== null) {
+          view.dispatch(tr);
+        }
+      }
+      mentionOpen = false;
+      mentionTriggerStart = null;
+      mentionQuery = '';
+      view.focus();
+    };
+
+    onMentionCancel = () => {
+      // Same cancel-mode pattern as backlinks: close the popover, leave
+      // the literal `@query` text in place. No derived-state extractor
+      // cares about loose `@`s in v1 — M-001 only acts on mention nodes,
+      // not raw `@email` strings.
+      mentionOpen = false;
+      view.focus();
+    };
+
     notesStore.start();
+    usersStore.start();
 
     cleanup = () => {
       view.destroy();
       provider.destroy();
       ydoc.destroy();
       notesStore.stop();
+      usersStore.stop();
     };
   });
 
@@ -330,6 +400,14 @@
     excludeNoteId={room ?? ''}
     onApply={onBacklinkApply}
     onCancel={onBacklinkCancel}
+  />
+{/if}
+{#if mentionOpen && onMentionApply && onMentionCancel}
+  <MentionPickerPopover
+    query={mentionQuery}
+    users={usersStore.users}
+    onApply={onMentionApply}
+    onCancel={onMentionCancel}
   />
 {/if}
 <div
@@ -448,6 +526,17 @@
   .editor :global(.ProseMirror a[data-backlink]:hover) {
     background: rgba(91, 141, 239, 0.18);
     text-decoration: underline;
+  }
+
+  /* W-013 mention. Inert chip — no click handler, just a styled span
+     that reads as @-prefixed text. Slightly different palette from the
+     backlink (warmer) so the two feel distinct at a glance. */
+  .editor :global(.ProseMirror span[data-mention]) {
+    color: #a0571c;
+    background: rgba(160, 87, 28, 0.08);
+    padding: 0 0.15rem;
+    border-radius: 3px;
+    font-weight: 500;
   }
 
   /* W-010 task list styling. The <li> renders a checkbox + content;

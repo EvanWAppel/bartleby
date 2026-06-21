@@ -27,6 +27,7 @@ import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
+import { createUsersApp } from './users/routes.js';
 
 export interface BartlebyHttpServer {
   readonly port: number;
@@ -99,10 +100,16 @@ export function buildBartlebyHttpApp(
   const auth_gate = requireSession({ sessionConfig, store });
   root.use('/notes/*', auth_gate);
   root.use('/search', auth_gate);
+  // W-013 users endpoint: feeds the @mention picker. Gated like the
+  // notes routes so unauthenticated callers can't enumerate the friends
+  // list.
+  root.use('/users', auth_gate);
   const notes = createNotesApp({ repos });
   root.route('/', notes);
   const search = createSearchApp({ repos });
   root.route('/', search);
+  const users = createUsersApp({ allowlist, store });
+  root.route('/', users);
 
   return { app: root, store };
 }

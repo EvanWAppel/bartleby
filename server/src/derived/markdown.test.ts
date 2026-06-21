@@ -189,6 +189,42 @@ describe('extractMarkdown (S-009)', () => {
     expect(extractMarkdown(doc)).toBe('[[Q3 plan: marketing & ops]]');
   });
 
+  it('serializes a mention inline node as @email (W-013)', () => {
+    // Mentions ride the same atom-node pattern as backlinks; the markdown
+    // form is `@<email>` so M-001's mention-extraction step can resolve
+    // back to user_id via a stable identifier (display names collide,
+    // emails don't).
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.text('cc '),
+          schema.node('mention', {
+            email: 'alice@example.com',
+            displayName: 'Alice',
+          }),
+          schema.text(' on this'),
+        ]),
+      ]),
+    );
+    expect(extractMarkdown(doc)).toBe('cc @alice@example.com on this');
+  });
+
+  it('serializes a mention with no displayName the same way (W-013)', () => {
+    // Allowlist entries that haven't signed in yet have no displayName;
+    // the mention still serializes by email alone.
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.node('mention', {
+            email: 'bob@example.com',
+            displayName: '',
+          }),
+        ]),
+      ]),
+    );
+    expect(extractMarkdown(doc)).toBe('@bob@example.com');
+  });
+
   it('serializes the strike mark as ~~text~~', () => {
     const strike = schema.marks['strike']!;
     const doc = buildYDoc(() =>

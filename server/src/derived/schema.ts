@@ -131,11 +131,51 @@ const backlinkNode: NodeSpec = {
   },
 };
 
+// W-013: mention inline atom. See web/src/lib/editor/schema.ts for the
+// design rationale; the server mirrors so the onStoreDocument hook can
+// deserialize mention-containing docs.
+const mentionNode: NodeSpec = {
+  attrs: {
+    email: { default: '' },
+    displayName: { default: '' },
+  },
+  group: 'inline',
+  inline: true,
+  atom: true,
+  parseDOM: [
+    {
+      tag: 'span[data-mention]',
+      getAttrs(el): Record<string, unknown> {
+        const e = el as { getAttribute(name: string): string | null; textContent: string | null };
+        return {
+          email: e.getAttribute('data-mention-email') ?? '',
+          displayName: e.getAttribute('data-mention-display') ?? '',
+        };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, string] {
+    const email = String(node.attrs['email']);
+    const displayName = String(node.attrs['displayName']);
+    const label = displayName.length > 0 ? `@${displayName}` : `@${email}`;
+    return [
+      'span',
+      {
+        'data-mention': '',
+        'data-mention-email': email,
+        'data-mention-display': displayName,
+      },
+      label,
+    ];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
 const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
   backlink: backlinkNode,
+  mention: mentionNode,
 });
 const marks = basicSchema.spec.marks.addToEnd('strike', strikeMark);
 
