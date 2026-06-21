@@ -2,7 +2,8 @@
 // hook deserializes the YDoc XmlFragment through this schema to extract
 // markdown for FTS + tag + backlink processing (S-009). The two schemas
 // MUST stay in sync or the server will fail to parse docs that contain
-// list nodes, strike marks, task items, or code block language tags.
+// list nodes, strike marks, task items, code block language tags, or
+// backlink nodes.
 //
 // When a shared monorepo package for editor utilities lands (likely
 // alongside I-001/I-002's markdown parser), promote this module there
@@ -92,10 +93,49 @@ const codeBlockNode: NodeSpec = {
   },
 };
 
+// W-012: backlink inline atom node. See web/src/lib/editor/schema.ts
+// for the design rationale; the server mirrors so the onStoreDocument
+// hook can deserialize backlink-containing docs.
+const backlinkNode: NodeSpec = {
+  attrs: {
+    targetId: { default: '' },
+    title: { default: '' },
+  },
+  group: 'inline',
+  inline: true,
+  atom: true,
+  parseDOM: [
+    {
+      tag: 'a[data-backlink]',
+      getAttrs(el): Record<string, unknown> {
+        const e = el as { getAttribute(name: string): string | null; textContent: string | null };
+        return {
+          targetId: e.getAttribute('data-backlink-target') ?? '',
+          title: e.textContent ?? '',
+        };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, string] {
+    const targetId = String(node.attrs['targetId']);
+    const title = String(node.attrs['title']);
+    return [
+      'a',
+      {
+        'data-backlink': '',
+        'data-backlink-target': targetId,
+        href: `/n/${targetId}`,
+      },
+      title,
+    ];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
 const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
+  backlink: backlinkNode,
 });
 const marks = basicSchema.spec.marks.addToEnd('strike', strikeMark);
 

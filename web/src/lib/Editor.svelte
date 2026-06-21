@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import EditorToolbar from '$lib/components/EditorToolbar.svelte';
   import LinkPopover from '$lib/components/LinkPopover.svelte';
   import CodeLangPopover from '$lib/components/CodeLangPopover.svelte';
+  import BacklinkPickerPopover from '$lib/components/BacklinkPickerPopover.svelte';
+  import { NotesStore } from '$lib/state/notes-store.svelte';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   interface Props {
@@ -14,6 +17,17 @@
 
   let editorEl: HTMLDivElement | null = $state(null);
   let actions: ToolbarActions | null = $state(null);
+
+  // W-012 backlink picker. The trigger plugin reports an active
+  // `[[<query>` state via its onChange callback; we mirror that into
+  // Svelte $state so the popover mounts/unmounts and re-filters as the
+  // user types. The NotesStore polls /notes every 1s so the candidate
+  // list is the same one the sidebar shows — no extra server roundtrip.
+  let backlinkOpen: boolean = $state(false);
+  let backlinkQuery: string = $state('');
+  let onBacklinkApply: ((targetId: string, title: string) => void) | null = $state(null);
+  let onBacklinkCancel: (() => void) | null = $state(null);
+  const notesStore = new NotesStore();
 
   // Link-popover state. Editor.svelte owns the open/closed flag and
   // the captured ProseMirror selection range; the LinkPopover
@@ -58,6 +72,8 @@
       { createTaskItemNodeView },
       { createCodeBlockNodeViewFactory },
       { buildHighlightPlugin },
+      { buildBacklinkTriggerPlugin, buildApplyTransaction: buildBacklinkApplyTx },
+      { createBacklinkNodeViewFactory },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -73,6 +89,8 @@
       import('$lib/editor/task-item-node-view'),
       import('$lib/editor/code-block-node-view'),
       import('$lib/editor/highlight-plugin'),
+      import('$lib/editor/backlink-trigger-plugin'),
+      import('$lib/editor/backlink-node-view'),
       import('y-prosemirror'),
     ]);
 
@@ -125,6 +143,34 @@
     // that y-prosemirror's ySyncPlugin doesn't tolerate well.
     const highlightPlugin = await buildHighlightPlugin({ schema });
 
+    // W-012 backlink trigger plugin. The plugin watches doc state for
+    // an active `[[<query>` typing session and signals via onChange;
+    // we mirror that into Svelte $state so the popover mounts and
+    // re-filters as the user types. `backlinkTriggerStart` is captured
+    // here so the apply transaction can replace the right range even
+    // if the cursor wanders before the user clicks a candidate.
+    let backlinkTriggerStart: number | null = null;
+    const backlinkTriggerPlugin = await buildBacklinkTriggerPlugin({
+      schema,
+      onChange(status) {
+        if (status === null) {
+          backlinkTriggerStart = null;
+          backlinkOpen = false;
+          backlinkQuery = '';
+          return;
+        }
+        backlinkTriggerStart = status.triggerStart;
+        backlinkQuery = status.query;
+        backlinkOpen = true;
+      },
+      onEscape() {
+        // Closing only — the plugin handles the suppression bookkeeping
+        // so the popover stays closed until the user types a fresh
+        // `[[`. Per W-012 cancel mode the doc is left untouched.
+        backlinkOpen = false;
+      },
+    });
+
     const state = EditorState.create({
       schema,
       plugins: [
@@ -139,6 +185,7 @@
         keymap(editorKeymap),
         keymap(baseKeymap),
         highlightPlugin,
+        backlinkTriggerPlugin,
       ],
     });
 
@@ -151,6 +198,11 @@
       nodeViews: {
         task_item: createTaskItemNodeView,
         code_block: createCodeBlockNodeViewFactory({ onRequest: requestCodeLang }),
+        backlink: createBacklinkNodeViewFactory({
+          navigate: (path) => {
+            void goto(path);
+          },
+        }),
       },
     });
 
@@ -218,10 +270,38 @@
       view.focus();
     };
 
+    onBacklinkApply = (targetId, title) => {
+      if (backlinkTriggerStart !== null) {
+        const tr = buildBacklinkApplyTx(view.state, backlinkTriggerStart, targetId, title);
+        if (tr !== null) {
+          view.dispatch(tr);
+        }
+      }
+      // Closing/clearing state is handled by the trigger plugin's
+      // onChange (the replace makes the [[…] vanish), but reset
+      // optimistically in case the tx was a no-op.
+      backlinkOpen = false;
+      backlinkTriggerStart = null;
+      backlinkQuery = '';
+      view.focus();
+    };
+
+    onBacklinkCancel = () => {
+      // W-012 cancel mode: leave the literal `[[query` in place. The
+      // S-009 backlink extractor will still resolve it server-side
+      // once the user types `]]`. We only close the popover and stop
+      // tracking; deliberately do NOT mutate the doc.
+      backlinkOpen = false;
+      view.focus();
+    };
+
+    notesStore.start();
+
     cleanup = () => {
       view.destroy();
       provider.destroy();
       ydoc.destroy();
+      notesStore.stop();
     };
   });
 
@@ -241,6 +321,15 @@
     currentLanguage={codeLangCurrent}
     onApply={onCodeLangApply}
     onCancel={onCodeLangCancel}
+  />
+{/if}
+{#if backlinkOpen && onBacklinkApply && onBacklinkCancel}
+  <BacklinkPickerPopover
+    query={backlinkQuery}
+    notes={notesStore.notes}
+    excludeNoteId={room ?? ''}
+    onApply={onBacklinkApply}
+    onCancel={onBacklinkCancel}
   />
 {/if}
 <div
@@ -341,6 +430,24 @@
 
   .editor :global(.ProseMirror s) {
     text-decoration: line-through;
+  }
+
+  /* W-012 backlink. Renders as a brackety-blue clickable link with no
+     underline by default — Notion/Obsidian convention. cursor:pointer
+     reinforces that plain click navigates rather than positions the
+     cursor (the NodeView intercepts the click). */
+  .editor :global(.ProseMirror a[data-backlink]) {
+    color: #5b8def;
+    background: rgba(91, 141, 239, 0.08);
+    padding: 0 0.15rem;
+    border-radius: 3px;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .editor :global(.ProseMirror a[data-backlink]:hover) {
+    background: rgba(91, 141, 239, 0.18);
+    text-decoration: underline;
   }
 
   /* W-010 task list styling. The <li> renders a checkbox + content;

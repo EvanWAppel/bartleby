@@ -22,6 +22,12 @@
 // language is the default 'text', we drop the tag and emit a plain
 // fence so the markdown reads naturally in tools that don't recognize
 // our "text" sentinel.
+//
+// W-012: backlink inline atom emits `[[title]]` — the same shape the
+// S-009 backlink-extraction regex already keys off. We deliberately
+// don't emit the targetId in the markdown: the extractor goes from
+// title -> id via noteTitlesHistory, and exporting raw ids would make
+// the markdown export brittle to id changes.
 
 import * as Y from 'yjs';
 import type { Node } from 'prosemirror-model';
@@ -63,6 +69,11 @@ const markdownSerializer = new MarkdownSerializer(
       state.text(node.textContent, false);
       state.write('\n```');
       state.closeBlock(node);
+    },
+    backlink(state: SerializerState, node: Node): void {
+      // Emit raw `[[title]]` — `text(..., false)` skips markdown
+      // escaping so the brackets don't get backslashed into oblivion.
+      state.text(`[[${String(node.attrs['title'])}]]`, false);
     },
   },
   {

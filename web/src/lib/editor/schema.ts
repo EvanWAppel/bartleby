@@ -1,14 +1,16 @@
 // Bartleby editor schema = prosemirror-schema-basic + list nodes (ul,
 // ol, li) from prosemirror-schema-list + a custom `strike` mark +
 // W-010 task list nodes (task_list, task_item with a `checked` attr) +
-// W-011 overrides code_block to carry a `language` attr.
+// W-011 overrides code_block to carry a `language` attr +
+// W-012 adds a `backlink` inline atom node (targetId + title) that
+// renders as a clickable <a> and round-trips to `[[title]]` in markdown.
 //
 // MIRRORS server/src/derived/schema.ts. The Hocuspocus onStoreDocument
 // hook deserializes the YDoc XmlFragment through ProseMirror's schema
 // to extract markdown for FTS + tag + backlink processing (S-009); the
 // two schemas MUST stay in sync or the server will fail to parse docs
-// that contain list nodes, strike marks, task items, or code block
-// language tags.
+// that contain list nodes, strike marks, task items, code block
+// language tags, or backlink nodes.
 //
 // When a shared monorepo package for editor utilities lands (likely
 // alongside I-001/I-002's markdown parser), promote this module there
@@ -97,10 +99,56 @@ const codeBlockNode: NodeSpec = {
   },
 };
 
+// W-012: backlink is an inline atom node carrying a stable target id
+// (so renames don't break the link) and the title shown at insert time
+// (so the rendered <a> doesn't need a server round-trip just to label
+// itself). Atoms are non-editable as a unit — backspace removes the
+// whole node, which matches the Obsidian/Notion mental model.
+//
+// Round-trip: the markdown serializer emits `[[title]]` so the S-009
+// onStoreDocument hook's existing backlink-extraction regex picks it
+// up unchanged. parseDOM here only matters for HTML paste / SSR, since
+// y-prosemirror's CRDT path uses node names + attrs directly.
+const backlinkNode: NodeSpec = {
+  attrs: {
+    targetId: { default: '' },
+    title: { default: '' },
+  },
+  group: 'inline',
+  inline: true,
+  atom: true,
+  parseDOM: [
+    {
+      tag: 'a[data-backlink]',
+      getAttrs(el): Record<string, unknown> {
+        const e = el as HTMLElement;
+        return {
+          targetId: e.getAttribute('data-backlink-target') ?? '',
+          title: e.textContent ?? '',
+        };
+      },
+    },
+  ],
+  toDOM(node): [string, Record<string, string>, string] {
+    const targetId = String(node.attrs['targetId']);
+    const title = String(node.attrs['title']);
+    return [
+      'a',
+      {
+        'data-backlink': '',
+        'data-backlink-target': targetId,
+        href: `/n/${targetId}`,
+      },
+      title,
+    ];
+  },
+};
+
 const nodesWithLists = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block');
 const nodes = nodesWithLists.update('code_block', codeBlockNode).append({
   task_list: taskListNode,
   task_item: taskItemNode,
+  backlink: backlinkNode,
 });
 const marks = basicSchema.spec.marks.addToEnd('strike', strikeMark);
 
@@ -128,6 +176,7 @@ export const nodeTypes = {
   list_item: schema.nodes['list_item']!,
   task_list: schema.nodes['task_list']!,
   task_item: schema.nodes['task_item']!,
+  backlink: schema.nodes['backlink']!,
 } as const;
 
 export const markTypes = {

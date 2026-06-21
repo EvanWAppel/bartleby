@@ -19,7 +19,13 @@ interface SpawnedServer {
   port: number;
 }
 
-async function waitForHealthy(port: number, timeoutMs = 10_000): Promise<void> {
+async function waitForHealthy(port: number, timeoutMs = 60_000): Promise<void> {
+  // 60s (was 10s) — under sustained vitest load (the suite spawns 43
+  // test files in parallel, all competing for CPU + the npm cache),
+  // the spawned `npx tsx src/index.ts` cold start can take 30s+
+  // because tsx transpiles every TS file in the require graph on the
+  // fly. The actual server is healthy in <1s once it's up; this
+  // timeout covers the tsx loader, not the server itself.
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -89,7 +95,11 @@ describe('crash-safety (O-010)', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('survives a SIGKILL mid-edit and resumes after restart', async () => {
+  // 120s test timeout — the spawned `npx tsx` cold start dominates
+  // wall time (see waitForHealthy comment above), and we spawn twice
+  // (round 1 + round 2 after SIGKILL), so the default 30s vitest
+  // timeout was a guaranteed failure on busy machines.
+  it('survives a SIGKILL mid-edit and resumes after restart', { timeout: 120_000 }, async () => {
     const roomName = 'crash-safety-room';
 
     // Round 1: spawn server, write data, wait for the SQLite debounce
@@ -128,5 +138,5 @@ describe('crash-safety (O-010)', () => {
         await new Promise((r) => second!.process.once('exit', r));
       }
     }
-  }, 30_000);
+  });
 });
