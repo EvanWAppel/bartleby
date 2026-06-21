@@ -151,6 +151,44 @@ describe('extractMarkdown (S-009)', () => {
     expect(out).toContain('plain content');
   });
 
+  it('serializes a backlink inline node as [[title]] (W-012)', () => {
+    // The S-009 backlink-extraction regex in derived/backlinks.ts keys
+    // off `[[…]]` in the markdown — the W-012 backlink node must round-
+    // trip to that same shape so the existing extractor populates the
+    // backlinks table without changes.
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.text('see '),
+          schema.node('backlink', {
+            targetId: '11111111-1111-1111-1111-111111111111',
+            title: 'Trip to Spain',
+          }),
+          schema.text(' for details'),
+        ]),
+      ]),
+    );
+    expect(extractMarkdown(doc)).toBe('see [[Trip to Spain]] for details');
+  });
+
+  it('serializes a backlink whose title contains spaces and punctuation (W-012)', () => {
+    // Ensures the serializer doesn't reflow / escape backlink text in a
+    // way the extractor regex would miss. The regex is /\[\[([^[\]\n]+)\]\]/g
+    // so titles containing `[` or `]` are intentionally excluded from
+    // this case (and the picker should never let you insert one).
+    const doc = buildYDoc(() =>
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.node('backlink', {
+            targetId: '22222222-2222-2222-2222-222222222222',
+            title: 'Q3 plan: marketing & ops',
+          }),
+        ]),
+      ]),
+    );
+    expect(extractMarkdown(doc)).toBe('[[Q3 plan: marketing & ops]]');
+  });
+
   it('serializes the strike mark as ~~text~~', () => {
     const strike = schema.marks['strike']!;
     const doc = buildYDoc(() =>
