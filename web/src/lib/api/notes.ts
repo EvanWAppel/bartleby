@@ -126,3 +126,34 @@ export async function retagNote(
   if (!res.ok) throw await parseError(res);
   return (await res.json()) as NoteSummary;
 }
+
+// W-016: typed inbound-link list for the right pane's Backlinks tab.
+// Server shape (S-007) is { backlinks: [{ source_id, source_title,
+// link_text }] }; trashed sources are already filtered server-side.
+export interface InboundBacklink {
+  sourceId: string;
+  sourceTitle: string;
+  linkText: string;
+}
+
+interface BacklinksListResponse {
+  backlinks: { source_id: string; source_title: string; link_text: string }[];
+}
+
+export async function listBacklinks(
+  id: string,
+  opts: { signal?: AbortSignal; fetch?: FetchLike } = {},
+): Promise<InboundBacklink[]> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}/backlinks`, {
+    headers: { accept: 'application/json' },
+    signal: opts.signal,
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as BacklinksListResponse;
+  return body.backlinks.map((b) => ({
+    sourceId: b.source_id,
+    sourceTitle: b.source_title,
+    linkText: b.link_text,
+  }));
+}
