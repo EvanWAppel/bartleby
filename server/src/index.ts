@@ -12,6 +12,8 @@ import { runMigrations } from './migrate.js';
 import { createTrashPurger } from './notes/purge.js';
 import { createBartlebyServer } from './server.js';
 import { createBartlebyHttpServer } from './http.js';
+import { createAutoSnapshotScheduler } from './snapshots/scheduler.js';
+import { createHocuspocusAccessor } from './snapshots/yjs-access.js';
 
 export function placeholder(): string {
   return 'bartleby-server';
@@ -65,6 +67,19 @@ async function main(): Promise<void> {
   const purger = createTrashPurger({ repos, logger });
   purger.start();
 
+  // 5b. C-002 auto-snapshot scheduler. Walks active notes every ~5 min;
+  //     for each note whose updated_at is newer than its latest
+  //     snapshot, encodes the current Yjs state and writes an
+  //     unlabeled snapshot row. C-005 retention is enforced in the
+  //     same tick. Timer is unref()'d (set inside the scheduler) so
+  //     it doesn't block shutdown.
+  const snapshotScheduler = createAutoSnapshotScheduler({
+    repos,
+    yjs: createHocuspocusAccessor(ws.hocuspocus),
+    logger,
+  });
+  snapshotScheduler.start();
+
   // 6. Boot the auth + notes HTTP server only if PUBLIC_BASE_URL is
   //    set — createBartlebyHttpServer needs it to build OAuth redirect
   //    URIs and downstream auth helpers also need
@@ -77,6 +92,7 @@ async function main(): Promise<void> {
       env: process.env,
       db,
       logger,
+      hocuspocus: ws.hocuspocus,
     });
     logger.info(
       {
@@ -95,6 +111,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
     purger.stop();
+    snapshotScheduler.stop();
     if (http !== undefined) {
       await http.close();
     }

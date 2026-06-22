@@ -17,17 +17,16 @@
   import { onMount } from 'svelte';
   import BacklinksPane from './BacklinksPane.svelte';
   import CommentsPane from './CommentsPane.svelte';
+  import SnapshotsPane from './SnapshotsPane.svelte';
 
   type RightPaneTab = 'comments' | 'backlinks' | 'history';
 
-  // Tab metadata. `placeholder` is the v1 stub copy for tabs whose real
-  // body hasn't shipped yet; Comments + Backlinks render their own
-  // panes and ignore the placeholder field. History still placeholder
-  // pending W-019.
+  // Tab metadata. Each tab mounts its own pane component; the
+  // `placeholder` field is vestigial now that all three live tabs ship.
   const TABS: { id: RightPaneTab; label: string; placeholder: string }[] = [
     { id: 'comments', label: 'Comments', placeholder: '' },
     { id: 'backlinks', label: 'Backlinks', placeholder: '' },
-    { id: 'history', label: 'History', placeholder: 'History will appear here. (W-019)' },
+    { id: 'history', label: 'History', placeholder: '' },
   ];
 
   const DEFAULT_TAB: RightPaneTab = 'comments';
@@ -111,6 +110,8 @@
           <BacklinksPane {noteId} />
         {:else if tab.id === 'comments'}
           <CommentsPane {noteId} />
+        {:else if tab.id === 'history'}
+          <SnapshotsPane {noteId} />
         {:else}
           <p class="placeholder">{tab.placeholder}</p>
         {/if}

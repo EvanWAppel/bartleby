@@ -7,7 +7,7 @@
 
 import { SQLite } from '@hocuspocus/extension-sqlite';
 import { Server } from '@hocuspocus/server';
-import type { Extension } from '@hocuspocus/server';
+import type { Extension, Hocuspocus } from '@hocuspocus/server';
 
 export interface BartlebyServerOptions {
   port: number;
@@ -31,6 +31,12 @@ export interface BartlebyServerOptions {
 export interface BartlebyServer {
   readonly port: number;
   destroy(): Promise<void>;
+  /**
+   * The Hocuspocus instance powering the WS server. Exposed so the
+   * HTTP server (same process) can open direct connections for C-002's
+   * scheduler and C-003/C-006's snapshot endpoints.
+   */
+  readonly hocuspocus: Hocuspocus;
   /**
    * Test-only hook: the live SQLite extension. Production code should
    * never reach for this; the /health test uses it to simulate a broken
@@ -85,6 +91,7 @@ export async function createBartlebyServer(
     async destroy() {
       await server.destroy();
     },
+    hocuspocus: server.hocuspocus,
     _sqliteForTesting: sqlite,
   };
 }
