@@ -53,15 +53,99 @@
     activeTag = activeTag === tag ? null : tag;
   }
 
-  onMount(() => store.start());
+  let sidebarEl: HTMLElement | null = $state(null);
+  let dragHandlersAttached = false;
+
+  function attachDragHandlers(el: HTMLElement): void {
+    if (dragHandlersAttached) return;
+    dragHandlersAttached = true;
+    el.addEventListener('dragover', onDragOver);
+    el.addEventListener('dragleave', onDragLeave);
+    el.addEventListener('drop', (e) => void onDrop(e as DragEvent));
+  }
+
+  onMount(() => {
+    store.start();
+    if (sidebarEl !== null) attachDragHandlers(sidebarEl);
+  });
   onDestroy(() => store.stop());
 
   function isActive(id: string): boolean {
     return page.url.pathname === `/n/${id}`;
   }
+
+  // W-025 drag-and-drop import. Listen for files dropped anywhere on
+  // the sidebar; POST each `.md` file to /notes/import as multipart;
+  // refresh the NotesStore so the new rows show up immediately
+  // instead of waiting for the next 1s poll.
+  let isDropTarget = $state(false);
+  let importing = $state(false);
+  let importError: string | null = $state(null);
+
+  function onDragOver(e: DragEvent): void {
+    if (e.dataTransfer === null) return;
+    // Only react if the drag is carrying files (text drags don't
+    // trigger the import flow).
+    const types = e.dataTransfer.types;
+    if (!types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    isDropTarget = true;
+  }
+
+  function onDragLeave(e: DragEvent): void {
+    // dragleave fires when crossing child element boundaries too. The
+    // relatedTarget check filters those out — only clear the flag when
+    // the cursor actually exits the sidebar.
+    if (e.currentTarget instanceof HTMLElement && e.relatedTarget instanceof Node) {
+      if (e.currentTarget.contains(e.relatedTarget)) return;
+    }
+    isDropTarget = false;
+  }
+
+  async function onDrop(e: DragEvent): Promise<void> {
+    if (e.dataTransfer === null) return;
+    e.preventDefault();
+    isDropTarget = false;
+    const files: File[] = [];
+    for (const f of Array.from(e.dataTransfer.files)) {
+      // Accept anything that looks like markdown; mime types coming
+      // off the OS are inconsistent (`text/markdown`, `text/x-markdown`,
+      // or just `text/plain`), so we key off the extension first.
+      if (/\.(md|markdown)$/i.test(f.name) || f.type.toLowerCase().includes('markdown')) {
+        files.push(f);
+      }
+    }
+    if (files.length === 0) return;
+    importing = true;
+    importError = null;
+    try {
+      const form = new FormData();
+      for (const f of files) form.append('files', f, f.name);
+      const res = await fetch('/notes/import', { method: 'POST', body: form });
+      if (!res.ok) {
+        importError = `import failed: ${res.status}`;
+        return;
+      }
+      // Force-refresh the notes list so the new rows surface before
+      // the next 1s poll cycle.
+      await store.refresh();
+    } catch (err) {
+      importError = err instanceof Error ? err.message : String(err);
+    } finally {
+      importing = false;
+    }
+  }
 </script>
 
-<aside class="sidebar" data-testid="sidebar" aria-label="Notes navigation">
+<aside
+  bind:this={sidebarEl}
+  class="sidebar"
+  class:dropping={isDropTarget}
+  data-testid="sidebar"
+  data-import-active={isDropTarget}
+  aria-label="Notes navigation"
+>
   <header class="brand">
     <h1>Bartleby</h1>
   </header>
@@ -69,6 +153,13 @@
   <form method="POST" action="/api/notes/new" data-testid="new-note-form">
     <button class="new" type="submit" data-testid="new-note-button"> + New note </button>
   </form>
+
+  {#if importing}
+    <p class="hint" data-testid="sidebar-import-progress">Importing…</p>
+  {/if}
+  {#if importError !== null}
+    <p class="error" data-testid="sidebar-import-error" role="alert">{importError}</p>
+  {/if}
 
   {#if availableTags.length > 0}
     <div class="tagchips" data-testid="sidebar-tag-chips" role="group" aria-label="Filter by tag">
@@ -134,6 +225,12 @@
     flex-direction: column;
     gap: 0.75rem;
     overflow-y: auto;
+  }
+
+  /* W-025 drop target: hint that dropping markdown here will import. */
+  .sidebar.dropping {
+    background: #eef3ff;
+    box-shadow: inset 0 0 0 2px #5b8def;
   }
 
   .brand h1 {

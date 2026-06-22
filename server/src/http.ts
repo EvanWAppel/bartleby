@@ -27,6 +27,7 @@ import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
 import { createCommentsApp } from './comments/routes.js';
+import { createImportApp } from './import/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
 import { createSnapshotsApp } from './snapshots/routes.js';
@@ -127,6 +128,10 @@ export function buildBartlebyHttpApp(
   if (deps.yjs !== undefined) {
     const snapshots = createSnapshotsApp({ repos, yjs: deps.yjs });
     root.route('/', snapshots);
+    // I-003 / W-025 import endpoint needs the Yjs accessor to seed
+    // initial doc state from the parsed markdown.
+    const importApp = createImportApp({ repos, yjs: deps.yjs });
+    root.route('/', importApp);
   }
 
   return { app: root, store };
