@@ -135,6 +135,17 @@
         <span class="badge" data-testid="sidebar-inbox-badge">{mentions.unread.length}</span>
       {/if}
     </a>
+    <!-- W-026: export all notes as a zip. Plain anchor with download
+         attribute so the browser handles the file save natively; the
+         server's content-disposition header supplies the filename. -->
+    <a
+      class="footer-link"
+      href="/export/all.zip"
+      download="bartleby-notes.zip"
+      data-testid="sidebar-export-all"
+    >
+      Export all as zip
+    </a>
   </nav>
 
   {#if user !== null}
