@@ -22,17 +22,17 @@
   // the pane reads as the active conversation; an "Include resolved"
   // toggle surfaces the full archive without leaving the pane.
 
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import {
     createComment,
     deleteComment,
-    listComments,
     reopenComment,
     replyToComment,
     resolveComment,
     type CommentDto,
   } from '$lib/api/comments';
   import { listUsers, type UserSummary } from '$lib/api/users';
+  import { getCommentsStore } from '$lib/state/comments-store.svelte';
 
   interface Props {
     noteId: string;
@@ -40,11 +40,15 @@
 
   let { noteId }: Props = $props();
 
-  let loading = $state(true);
-  let error: string | null = $state(null);
-  let comments: CommentDto[] = $state([]);
+  // Shared store between Editor.svelte (for body markers) and this
+  // pane. attach/detach maintain a refcount; the store auto-evicts
+  // when the last consumer unmounts. NoteRightPane keys on noteId so
+  // the value is stable per mount; we use $derived to silence the
+  // state-referenced-locally compiler warning without changing
+  // behaviour.
+  const store = $derived(getCommentsStore(noteId));
+
   let users: UserSummary[] = $state([]);
-  let includeResolved = $state(false);
   // Composer state for the "New comment" form at the top of the pane.
   let newBody = $state('');
   let submittingNew = $state(false);
@@ -53,6 +57,11 @@
   let replyOpenFor: string | null = $state(null);
   let replyDraft = $state('');
   let submittingReply = $state(false);
+  // W-018 marker focus: which thread the editor's marker click is
+  // pointing at. Cleared on click anywhere or after a few seconds —
+  // we just want a brief visual ping, not sticky highlight.
+  let focusedThreadId: string | null = $state(null);
+  let threadCardEls: Record<string, HTMLLIElement | null> = $state({});
 
   interface Thread {
     top: CommentDto;
@@ -67,7 +76,7 @@
     // the schema, so they shouldn't show up.
     const tops: CommentDto[] = [];
     const byParent = new Map<string, CommentDto[]>();
-    for (const c of comments) {
+    for (const c of store.comments) {
       if (c.parent_comment_id === null) {
         tops.push(c);
       } else {
@@ -79,24 +88,49 @@
     return tops.map((top) => ({ top, replies: byParent.get(top.id) ?? [] }));
   });
 
-  async function refresh(): Promise<void> {
-    try {
-      comments = await listComments(noteId, { includeResolved });
-      error = null;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
+  async function focusThread(commentId: string): Promise<void> {
+    focusedThreadId = commentId;
+    await tick();
+    const el = threadCardEls[commentId];
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Ping the highlight for a couple seconds then drop it.
+    setTimeout(() => {
+      if (focusedThreadId === commentId) focusedThreadId = null;
+    }, 2000);
+  }
+
+  function onFocusEvent(e: Event): void {
+    const detail = (e as CustomEvent<{ noteId?: string; commentId?: string }>).detail;
+    if (detail.noteId !== noteId || typeof detail.commentId !== 'string') return;
+    void focusThread(detail.commentId);
   }
 
   onMount(async () => {
-    // Fire both fetches in parallel — the users list is small and
-    // operator-managed so we treat it as effectively static for the
-    // life of the pane (the W-013 UsersStore polls it on a 30s cadence
-    // elsewhere in the app; here we only need a one-shot mapping).
-    const [_, u] = await Promise.all([refresh(), listUsers().catch(() => [] as UserSummary[])]);
+    store.attach();
+    const u = await listUsers().catch(() => [] as UserSummary[]);
     users = u;
+    window.addEventListener('bartleby:focus-comment', onFocusEvent);
+    // Replay a marker-click that landed in localStorage before the
+    // pane mounted (the editor wrote it, the user switched tab, and
+    // by the time CommentsPane is alive the event has already fired).
+    try {
+      const pending = window.localStorage.getItem(`bartleby:comments:focus:${noteId}`);
+      if (pending !== null && pending.length > 0) {
+        window.localStorage.removeItem(`bartleby:comments:focus:${noteId}`);
+        await focusThread(pending);
+      }
+    } catch {
+      // localStorage failures are non-fatal.
+    }
+  });
+
+  onDestroy(() => {
+    // onDestroy fires during SSR cleanup too — guard the window access
+    // so the prerender pass doesn't crash with "window is not defined".
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('bartleby:focus-comment', onFocusEvent);
+    }
+    store.detach();
   });
 
   function authorLabel(authorId: string): string {
@@ -112,10 +146,10 @@
     submittingNew = true;
     try {
       const created = await createComment(noteId, { body: text });
-      comments = [...comments, created];
+      store.insertLocal(created);
       newBody = '';
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      store.error = e instanceof Error ? e.message : String(e);
     } finally {
       submittingNew = false;
     }
@@ -137,10 +171,10 @@
     submittingReply = true;
     try {
       const created = await replyToComment(topId, text);
-      comments = [...comments, created];
+      store.insertLocal(created);
       closeReply();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      store.error = e instanceof Error ? e.message : String(e);
     } finally {
       submittingReply = false;
     }
@@ -150,14 +184,14 @@
     try {
       const updated =
         c.resolved_at === null ? await resolveComment(c.id) : await reopenComment(c.id);
-      comments = comments.map((x) => (x.id === updated.id ? updated : x));
+      store.updateLocal(updated);
       // When a thread is resolved and the user hasn't asked for resolved
       // visibility, refresh so the row drops out of the list cleanly.
-      if (!includeResolved && updated.resolved_at !== null) {
-        await refresh();
+      if (!store.includeResolved && updated.resolved_at !== null) {
+        await store.refresh();
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      store.error = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -168,15 +202,15 @@
       // The server's FK ON DELETE CASCADE handles the same on the row
       // side, but the local state otherwise carries the stale replies
       // until next refresh.
-      comments = comments.filter((x) => x.id !== c.id && x.parent_comment_id !== c.id);
+      store.removeLocal(c.id);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      store.error = e instanceof Error ? e.message : String(e);
     }
   }
 
-  async function onIncludeResolvedChange(): Promise<void> {
-    loading = true;
-    await refresh();
+  function onIncludeResolvedChange(e: Event): void {
+    const checked = (e.target as HTMLInputElement).checked;
+    void store.setIncludeResolved(checked);
   }
 </script>
 
@@ -211,25 +245,29 @@
   <label class="filter" data-testid="comments-pane-filter">
     <input
       type="checkbox"
-      bind:checked={includeResolved}
-      onchange={() => void onIncludeResolvedChange()}
+      checked={store.includeResolved}
+      onchange={onIncludeResolvedChange}
       data-testid="comments-pane-include-resolved"
     />
     Include resolved
   </label>
 
-  {#if loading}
+  {#if store.loading}
     <p class="hint" data-testid="comments-pane-loading">Loading comments…</p>
-  {:else if error !== null}
-    <p class="errortext" data-testid="comments-pane-error">Couldn't load comments: {error}</p>
+  {:else if store.error !== null}
+    <p class="errortext" data-testid="comments-pane-error">
+      Couldn't load comments: {store.error}
+    </p>
   {:else if threads.length === 0}
     <p class="hint" data-testid="comments-pane-empty">No comments yet.</p>
   {:else}
     <ul class="threads" data-testid="comments-pane-list">
       {#each threads as thread (thread.top.id)}
         <li
+          bind:this={threadCardEls[thread.top.id]}
           class="thread"
           class:resolved={thread.top.resolved_at !== null}
+          class:focused={focusedThreadId === thread.top.id}
           data-testid={`comments-thread-${thread.top.id}`}
         >
           <div class="row top">
@@ -422,6 +460,14 @@
 
   .thread.resolved {
     opacity: 0.6;
+  }
+
+  .thread.focused {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
   }
 
   .row {

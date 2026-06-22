@@ -6,8 +6,11 @@
   import CodeLangPopover from '$lib/components/CodeLangPopover.svelte';
   import BacklinkPickerPopover from '$lib/components/BacklinkPickerPopover.svelte';
   import MentionPickerPopover from '$lib/components/MentionPickerPopover.svelte';
+  import CommentComposerPopover from '$lib/components/CommentComposerPopover.svelte';
   import { NotesStore } from '$lib/state/notes-store.svelte';
   import { UsersStore } from '$lib/state/users-store.svelte';
+  import { getCommentsStore } from '$lib/state/comments-store.svelte';
+  import { createComment } from '$lib/api/comments';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   // W-014 / C-001: the current user's identity flows from
@@ -77,6 +80,28 @@
   let onCodeLangApply: ((lang: string) => void) | null = $state(null);
   let onCodeLangCancel: (() => void) | null = $state(null);
 
+  // W-018 comment floating-toolbar + composer. The selection plugin
+  // reports whenever the user has a non-empty selection in a normal
+  // textblock; we mirror that into Svelte $state so a "Comment" button
+  // can mount near the selection's bottom edge. Clicking it captures
+  // the current range + text, hides the toolbar, and shows the
+  // composer. The CommentsStore singleton is shared with CommentsPane
+  // so a post here lights up the right pane without a refetch.
+  let commentToolbarOpen = $state(false);
+  let commentSel: { from: number; to: number; text: string } | null = $state(null);
+  let commentToolbarPos: { left: number; top: number } | null = $state(null);
+  let commentComposerOpen = $state(false);
+  let commentComposerQuote = $state('');
+  let commentComposerPos: { left: number; top: number } | null = $state(null);
+  let onCommentSubmit: ((body: string) => void) | null = $state(null);
+  let onCommentCancel: (() => void) | null = $state(null);
+  // `room` is treated as stable for the lifetime of the Editor mount
+  // (the page's `{#key data.id}` pattern ensures children of a changed
+  // note are remounted; we follow the same contract for the editor).
+  // Reading the prop once at $derived time captures the live value
+  // while silencing the state-referenced-locally compiler warning.
+  const commentsStore = $derived(room !== undefined ? getCommentsStore(room) : null);
+
   // Phase 0: heavy editor modules are dynamically imported so SvelteKit's
   // SSR pass doesn't try to load the DOM-dependent ProseMirror code.
   // The schema/keymap/inputrules modules themselves are pure data
@@ -103,6 +128,9 @@
       { createBacklinkNodeViewFactory },
       { buildMentionTriggerPlugin, buildApplyTransaction: buildMentionApplyTx },
       { createMentionNodeView },
+      { buildCommentSelectionPlugin },
+      { buildCommentMarkersPlugin, refreshCommentMarkers },
+      { buildAnchor, serializeAnchor },
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
@@ -122,6 +150,9 @@
       import('$lib/editor/backlink-node-view'),
       import('$lib/editor/mention-trigger-plugin'),
       import('$lib/editor/mention-node-view'),
+      import('$lib/editor/comment-selection-plugin'),
+      import('$lib/editor/comment-markers-plugin'),
+      import('$lib/editor/comment-anchor'),
       import('y-prosemirror'),
     ]);
 
@@ -253,6 +284,55 @@
         ? [yCursorPlugin(provider.awareness)]
         : [];
 
+    // W-018 comment-selection plugin. Reports selection state so the
+    // floating "Comment" toolbar can mount near the selection's bottom
+    // edge. Positioning happens after the plugin fires, using the
+    // live view's `coordsAtPos(to)` — we wait until `view` is defined
+    // (below) before reading coords.
+    const commentSelectionPlugin = await buildCommentSelectionPlugin({
+      schema,
+      onChange(status) {
+        if (status === null) {
+          commentToolbarOpen = false;
+          commentSel = null;
+          commentToolbarPos = null;
+          return;
+        }
+        if (commentComposerOpen) return; // composer wins until it closes
+        commentSel = status;
+        commentToolbarPos = computeAnchorPos(status.to);
+        commentToolbarOpen = true;
+      },
+    });
+
+    // W-018 in-body comment markers. Reads the shared CommentsStore
+    // (so a post in the toolbar's composer + a post from the pane both
+    // light up the body decoration) and renders one numbered marker
+    // per top-level non-resolved comment with a resolvable anchor.
+    const markersPlugin = await buildCommentMarkersPlugin({
+      getComments: () => (commentsStore !== null ? commentsStore.comments : []),
+      onMarkerClick(commentId) {
+        // Switch the right pane to Comments and write the marker's id
+        // into a localStorage cell that CommentsPane reads to highlight
+        // the corresponding thread. W-015's localStorage key is
+        // already per-note; this one tags the thread to focus.
+        if (room !== undefined) {
+          try {
+            window.localStorage.setItem(`bartleby:rightpane:tab:${room}`, 'comments');
+            window.localStorage.setItem(`bartleby:comments:focus:${room}`, commentId);
+          } catch {
+            // localStorage failures are non-fatal — the marker click
+            // still works in-memory via the events below.
+          }
+        }
+        window.dispatchEvent(
+          new CustomEvent('bartleby:focus-comment', {
+            detail: { noteId: room, commentId },
+          }),
+        );
+      },
+    });
+
     const state = EditorState.create({
       schema,
       plugins: [
@@ -270,8 +350,28 @@
         highlightPlugin,
         backlinkTriggerPlugin,
         mentionTriggerPlugin,
+        commentSelectionPlugin,
+        markersPlugin,
       ],
     });
+
+    // computeAnchorPos uses the live view (defined below). Implemented
+    // here as a closure that captures `view` once it's set; the
+    // commentSelectionPlugin's onChange fires AFTER view construction
+    // so the reference is safe at call time.
+    function computeAnchorPos(pos: number): { left: number; top: number } | null {
+      try {
+        const coords = view.coordsAtPos(pos);
+        const rootRect = editorEl?.getBoundingClientRect();
+        if (rootRect === undefined) return null;
+        return {
+          left: coords.left - rootRect.left,
+          top: coords.bottom - rootRect.top + 4,
+        };
+      } catch {
+        return null;
+      }
+    }
 
     if (editorEl === null) {
       throw new Error('editor mount point missing');
@@ -402,17 +502,92 @@
       view.focus();
     };
 
+    // W-018: clicking "Comment" in the floating toolbar captures the
+    // current selection, swaps toolbar → composer, and locks the
+    // selection coords (the composer doesn't move if the user clicks
+    // elsewhere afterwards).
+    function openComposerForSelection(): void {
+      if (commentSel === null) return;
+      commentComposerQuote = commentSel.text;
+      commentComposerPos = commentToolbarPos;
+      commentToolbarOpen = false;
+      commentComposerOpen = true;
+    }
+
+    onCommentSubmit = (body) => {
+      const sel = commentSel;
+      if (sel === null || room === undefined) {
+        commentComposerOpen = false;
+        return;
+      }
+      const anchor = buildAnchor(view.state, { from: sel.from, to: sel.to });
+      const serialized = anchor === null ? '' : serializeAnchor(anchor);
+      void (async () => {
+        try {
+          const created = await createComment(room, {
+            anchor: serialized,
+            originalQuote: sel.text,
+            body,
+          });
+          commentsStore?.insertLocal(created);
+          // Force the markers plugin to rebuild — the comments list
+          // changed but the PM doc didn't.
+          refreshCommentMarkers(view);
+        } catch (e) {
+          console.error('comment create failed', e);
+        } finally {
+          commentComposerOpen = false;
+          commentSel = null;
+          commentComposerPos = null;
+          view.focus();
+        }
+      })();
+    };
+
+    onCommentCancel = () => {
+      commentComposerOpen = false;
+      commentSel = null;
+      commentComposerPos = null;
+      view.focus();
+    };
+
+    // Stash the openComposer helper for the toolbar's onclick (defined
+    // in the template). Use a property to bridge the closure across the
+    // <script>'s onMount and the markup.
+    handleCommentToolbarClick = openComposerForSelection;
+
+    // Refresh markers whenever the store's comment list changes from
+    // elsewhere (CommentsPane created a comment, resolved a thread,
+    // etc.). $effect tracks `commentsStore.comments` reactively.
+    const stopWatch = $effect.root(() => {
+      $effect(() => {
+        if (commentsStore === null) return;
+        // Touch the reactive field so the effect re-runs on change.
+        void commentsStore.comments.length;
+        refreshCommentMarkers(view);
+      });
+    });
+
+    if (commentsStore !== null) {
+      commentsStore.attach();
+    }
     notesStore.start();
     usersStore.start();
 
     cleanup = () => {
+      stopWatch();
       view.destroy();
       provider.destroy();
       ydoc.destroy();
       notesStore.stop();
       usersStore.stop();
+      if (commentsStore !== null) commentsStore.detach();
     };
   });
+
+  // Bridge for the template's onclick — assigned inside onMount once
+  // the closure (over `view`) is built.
+  let handleCommentToolbarClick: (() => void) | null = $state(null);
 
   onDestroy(() => {
     cleanup?.();
@@ -449,16 +624,107 @@
     onCancel={onMentionCancel}
   />
 {/if}
-<div
-  bind:this={editorEl}
-  data-testid="editor"
-  class="editor"
-  role="textbox"
-  aria-label="Note body"
-  tabindex="0"
-></div>
+<div class="editor-wrap">
+  {#if commentToolbarOpen && commentToolbarPos !== null && handleCommentToolbarClick !== null}
+    <div
+      class="comment-floating-toolbar"
+      data-testid="comment-floating-toolbar"
+      style="left: {commentToolbarPos.left}px; top: {commentToolbarPos.top}px;"
+    >
+      <button
+        type="button"
+        class="comment-button"
+        data-testid="comment-floating-toolbar-button"
+        onmousedown={(e) => e.preventDefault()}
+        onclick={() => handleCommentToolbarClick?.()}
+      >
+        💬 Comment
+      </button>
+    </div>
+  {/if}
+  {#if commentComposerOpen && commentComposerPos !== null && onCommentSubmit && onCommentCancel}
+    <div
+      class="comment-composer-anchor"
+      style="left: {commentComposerPos.left}px; top: {commentComposerPos.top}px;"
+    >
+      <CommentComposerPopover
+        quote={commentComposerQuote}
+        onSubmit={onCommentSubmit}
+        onCancel={onCommentCancel}
+      />
+    </div>
+  {/if}
+  <div
+    bind:this={editorEl}
+    data-testid="editor"
+    class="editor"
+    role="textbox"
+    aria-label="Note body"
+    tabindex="0"
+  ></div>
+</div>
 
 <style>
+  .editor-wrap {
+    position: relative;
+  }
+
+  /* W-018 floating "Comment" toolbar. Positioned absolutely off the
+     editor-wrap's origin using coords computed from view.coordsAtPos. */
+  .comment-floating-toolbar {
+    position: absolute;
+    z-index: 5;
+    transform: translateX(-50%);
+  }
+
+  .comment-button {
+    appearance: none;
+    border: 1px solid #5b8def;
+    background: #5b8def;
+    color: #fff;
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .comment-button:hover {
+    background: #4a7bd8;
+  }
+
+  .comment-composer-anchor {
+    position: absolute;
+    z-index: 6;
+    transform: translateX(-50%);
+  }
+
+  /* W-018 in-body comment markers. Numbered chips emitted by
+     buildCommentMarkersPlugin as PM widget decorations after each
+     anchored range. Click-handlers live on the button itself. */
+  .editor :global(.ProseMirror button[data-comment-marker]) {
+    appearance: none;
+    border: 1px solid #f59e0b;
+    background: #fff7ed;
+    color: #a0571c;
+    border-radius: 999px;
+    width: 1.4em;
+    height: 1.4em;
+    line-height: 1;
+    font-size: 0.7rem;
+    font-family: inherit;
+    margin-left: 0.15rem;
+    cursor: pointer;
+    padding: 0;
+    vertical-align: super;
+  }
+
+  .editor :global(.ProseMirror button[data-comment-marker]:hover) {
+    background: #f59e0b;
+    color: #fff;
+  }
+
   .editor {
     border: 1px solid #ccc;
     border-radius: 0 0 6px 6px;
