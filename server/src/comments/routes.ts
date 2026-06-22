@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import type { CommentRow } from '../db/repositories/index.js';
+import { extractMentionEmails } from '../derived/mentions.js';
 import { NotFoundError, ValidationError } from '../http/errors.js';
 
 type CommentsContext = Context<{ Variables: AuthVars }>;
@@ -68,6 +69,35 @@ function toDto(row: CommentRow): CommentRow {
   return row;
 }
 
+/**
+ * M-002 helper. After a comment row lands, scan its body for `@email`
+ * mentions, resolve each to a user, and insert a mentions row per
+ * net-new (user, comment) pair. Source is `comment:<comment_id>` so
+ * the same user mentioned in a different comment stays a separate
+ * inbox entry. Self-mentions (commenter mentioning themselves) are
+ * silently dropped.
+ */
+function extractCommentMentions(deps: CommentsAppDeps, comment: CommentRow): void {
+  const { repos } = deps;
+  const source = `comment:${comment.id}`;
+  const emails = extractMentionEmails(comment.body);
+  if (emails.length === 0) return;
+  const at = comment.created_at;
+  for (const email of emails) {
+    const user = repos.users.findByEmail(email);
+    if (user === undefined) continue;
+    if (user.id === comment.author_id) continue;
+    repos.mentions.insert({
+      id: randomUUID(),
+      note_id: comment.note_id,
+      mentioned_user_id: user.id,
+      mentioning_user_id: comment.author_id,
+      source,
+      created_at: at,
+    });
+  }
+}
+
 export function createCommentsApp(deps: CommentsAppDeps): Hono<{ Variables: AuthVars }> {
   const { repos } = deps;
   const app = new Hono<{ Variables: AuthVars }>();
@@ -94,6 +124,7 @@ export function createCommentsApp(deps: CommentsAppDeps): Hono<{ Variables: Auth
       body: text,
       created_at: nowIso(deps),
     });
+    extractCommentMentions(deps, row);
     return c.json(toDto(row), 201);
   });
 
@@ -132,6 +163,7 @@ export function createCommentsApp(deps: CommentsAppDeps): Hono<{ Variables: Auth
       body: text,
       created_at: nowIso(deps),
     });
+    extractCommentMentions(deps, row);
     return c.json(toDto(row), 201);
   });
 

@@ -21,6 +21,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/state';
   import { NotesStore } from '$lib/state/notes-store.svelte';
+  import { MentionsStore } from '$lib/state/mentions-store.svelte';
 
   interface Props {
     user: { display_name: string; color: string } | null;
@@ -28,6 +29,10 @@
   let { user }: Props = $props();
 
   const store = new NotesStore();
+  // W-023 unread-mentions badge. Polls on a 5s cadence (mentions are
+  // not high-frequency) — clicking a row in /inbox marks it read via
+  // POST /mentions/:id/read and the next poll clears the badge.
+  const mentions = new MentionsStore();
 
   let activeTag: string | null = $state(null);
 
@@ -53,8 +58,14 @@
     activeTag = activeTag === tag ? null : tag;
   }
 
-  onMount(() => store.start());
-  onDestroy(() => store.stop());
+  onMount(() => {
+    store.start();
+    mentions.start();
+  });
+  onDestroy(() => {
+    store.stop();
+    mentions.stop();
+  });
 
   function isActive(id: string): boolean {
     return page.url.pathname === `/n/${id}`;
@@ -115,6 +126,15 @@
         {/each}
       </ul>
     {/if}
+  </nav>
+
+  <nav class="footer-nav" aria-label="App pages">
+    <a class="footer-link" href="/inbox" data-testid="sidebar-inbox-link">
+      Inbox
+      {#if mentions.unread.length > 0}
+        <span class="badge" data-testid="sidebar-inbox-badge">{mentions.unread.length}</span>
+      {/if}
+    </a>
   </nav>
 
   {#if user !== null}
@@ -233,6 +253,42 @@
     color: #b00020;
     font-size: 0.85rem;
     margin: 0;
+  }
+
+  .footer-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .footer-link {
+    color: #555;
+    text-decoration: none;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .footer-link:hover {
+    background: #ececec;
+    color: #222;
+  }
+
+  .badge {
+    background: #c0392b;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0 0.4rem;
+    line-height: 1.2;
+    min-width: 1.2rem;
+    text-align: center;
   }
 
   .who {

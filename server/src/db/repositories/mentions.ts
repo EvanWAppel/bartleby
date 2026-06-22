@@ -12,7 +12,12 @@ export interface MentionInsert {
 
 export interface MentionsRepository {
   insert(m: MentionInsert): MentionRow;
+  findById(id: string): MentionRow | undefined;
   listForUser(userId: string, opts?: { unread?: boolean }): MentionRow[];
+  /** M-001: every mention attributed to a note (any source) — used to
+   * dedupe before inserting a fresh batch from a re-extracted markdown
+   * body. */
+  listForNote(noteId: string, opts?: { source?: string }): MentionRow[];
   markRead(id: string, readAt: string): void;
   listPendingEmail(): MentionRow[];
   markEmailSent(ids: string[], at: string): void;
@@ -37,6 +42,12 @@ export function createMentionsRepository(db: Database): MentionsRepository {
   const listPendingEmailStmt = db.prepare<[], MentionRow>(
     `SELECT * FROM mentions WHERE email_sent_at IS NULL ORDER BY created_at, id`,
   );
+  const listForNoteStmt = db.prepare<[string], MentionRow>(
+    `SELECT * FROM mentions WHERE note_id = ? ORDER BY created_at, id`,
+  );
+  const listForNoteAndSourceStmt = db.prepare<[string, string], MentionRow>(
+    `SELECT * FROM mentions WHERE note_id = ? AND source = ? ORDER BY created_at, id`,
+  );
 
   return {
     insert(m) {
@@ -47,8 +58,13 @@ export function createMentionsRepository(db: Database): MentionsRepository {
       }
       return row;
     },
+    findById: (id) => findByIdStmt.get(id),
     listForUser: (userId, opts) =>
       opts?.unread ? listUnreadForUserStmt.all(userId) : listAllForUserStmt.all(userId),
+    listForNote: (noteId, opts) =>
+      opts?.source !== undefined
+        ? listForNoteAndSourceStmt.all(noteId, opts.source)
+        : listForNoteStmt.all(noteId),
     markRead: (id, at) => {
       markReadStmt.run(at, id);
     },

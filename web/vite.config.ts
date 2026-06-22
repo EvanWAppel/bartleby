@@ -10,7 +10,7 @@ import { defineConfig } from 'vite';
 // reverse proxy layer.
 const bartlebyHttpPort = process.env.BARTLEBY_HTTP_PORT ?? '3000';
 const bartlebyTarget = `http://127.0.0.1:${bartlebyHttpPort}`;
-const proxiedPrefixes = ['/auth', '/notes', '/search', '/users', '/comments'];
+const proxiedPrefixes = ['/auth', '/notes', '/search', '/users', '/comments', '/mentions'];
 
 const proxy = Object.fromEntries(
   proxiedPrefixes.map((prefix) => [prefix, { target: bartlebyTarget, changeOrigin: false }]),

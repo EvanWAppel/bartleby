@@ -19,6 +19,8 @@ import {
 import { type SessionStore } from './store.js';
 import { type GoogleClient } from './google.js';
 import { requireSession, type AuthVars } from './middleware.js';
+import type { Repositories } from '../db/repositories/index.js';
+import { ensureUserExists } from '../notes/ensure-user.js';
 
 const OAUTH_STATE_COOKIE = 'bartleby_oauth_state';
 const OAUTH_STATE_MAX_AGE_SECONDS = 600;
@@ -36,6 +38,10 @@ export interface AuthAppDeps {
   allowlist: EmailAllowlist;
   google: GoogleClient;
   appConfig: AuthAppConfig;
+  /** Optional D repos; when provided, the OAuth callback bridges the
+   * session user into D's `users` table so subsequent mention
+   * extraction can resolve them by email. */
+  repos?: Repositories;
 }
 
 function buildRedirectUri(baseUrl: string): string {
@@ -103,6 +109,9 @@ export function createAuthApp(deps: AuthAppDeps): Hono<{ Variables: AuthVars }> 
       email: info.email,
       displayName: info.displayName,
     });
+    if (deps.repos !== undefined) {
+      ensureUserExists(deps.repos.users, user);
+    }
     const jti = randomUUID();
     const token = await issueSessionJwt(deps.sessionConfig, {
       userId: user.id,

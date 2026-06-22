@@ -27,6 +27,7 @@ import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
 import { createCommentsApp } from './comments/routes.js';
+import { createMentionsApp } from './mentions/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
 import { createSnapshotsApp } from './snapshots/routes.js';
@@ -91,6 +92,7 @@ export function buildBartlebyHttpApp(
     allowlist,
     google,
     appConfig: { publicBaseUrl },
+    repos,
   });
   root.route('/', auth);
 
@@ -99,7 +101,7 @@ export function buildBartlebyHttpApp(
   // auth routes means it's discoverable at the same /auth/* prefix the
   // Vite proxy already covers.
   if (env.ALLOW_TEST_SIGN_IN === 'true') {
-    const devAuth = createDevAuthApp({ sessionConfig, store });
+    const devAuth = createDevAuthApp({ sessionConfig, store, repos });
     root.route('/', devAuth);
     deps.logger.warn(
       'ALLOW_TEST_SIGN_IN=true — /auth/dev/sign-in is mounted. Never enable this in production.',
@@ -116,6 +118,9 @@ export function buildBartlebyHttpApp(
   root.use('/users', auth_gate);
   // C-007 comments endpoints (both /notes/:id/comments and /comments/:id/*).
   root.use('/comments/*', auth_gate);
+  // M-003/M-004 mentions endpoints.
+  root.use('/mentions', auth_gate);
+  root.use('/mentions/*', auth_gate);
   const notes = createNotesApp({ repos });
   root.route('/', notes);
   const search = createSearchApp({ repos });
@@ -124,6 +129,8 @@ export function buildBartlebyHttpApp(
   root.route('/', users);
   const comments = createCommentsApp({ repos });
   root.route('/', comments);
+  const mentions = createMentionsApp({ repos });
+  root.route('/', mentions);
   if (deps.yjs !== undefined) {
     const snapshots = createSnapshotsApp({ repos, yjs: deps.yjs });
     root.route('/', snapshots);
