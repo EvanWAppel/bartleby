@@ -1,7 +1,16 @@
 <script lang="ts">
-  // W-004: live notes list + new-note button. Polled every 1s by
-  // NotesStore so creates/renames/deletes from other clients land
+  // W-004 sidebar: live notes list + new-note button. Polled every 1s
+  // by NotesStore so creates/renames/deletes from other clients land
   // here within a second.
+  //
+  // W-021 layers tag-filter chips on top of the list. We do the
+  // filtering client-side off the polled NotesStore — the server's
+  // ?tag filter would work too, but client-side keeps the chip set
+  // stable (filtering shrinks the visible list, but the chips still
+  // need to show OTHER tags so the user can switch filters; pulling
+  // both filtered + unfiltered lists every second would double the
+  // poll cost). Click cycles: click a chip to filter, click the same
+  // chip again to clear.
   //
   // The new-note button is a form POSTing to /api/notes/new (a thin
   // SvelteKit server endpoint that calls bartleby's POST /notes and
@@ -20,6 +29,30 @@
 
   const store = new NotesStore();
 
+  let activeTag: string | null = $state(null);
+
+  // Union of all tags across every note, sorted lowercase. Recomputes
+  // when the store's `notes` array changes. We sort + lowercase the
+  // display alphabetically rather than by tag-frequency or recency to
+  // keep the chip order stable across polls — a chip that jumps around
+  // mid-click would be miserable to use.
+  const availableTags: string[] = $derived.by(() => {
+    const set = new Set<string>();
+    for (const n of store.notes) {
+      for (const t of n.tags) set.add(t);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  });
+
+  const visibleNotes = $derived.by(() => {
+    if (activeTag === null) return store.notes;
+    return store.notes.filter((n) => n.tags.includes(activeTag as string));
+  });
+
+  function toggleTag(tag: string): void {
+    activeTag = activeTag === tag ? null : tag;
+  }
+
   onMount(() => store.start());
   onDestroy(() => store.stop());
 
@@ -37,6 +70,24 @@
     <button class="new" type="submit" data-testid="new-note-button"> + New note </button>
   </form>
 
+  {#if availableTags.length > 0}
+    <div class="tagchips" data-testid="sidebar-tag-chips" role="group" aria-label="Filter by tag">
+      {#each availableTags as tag (tag)}
+        <button
+          type="button"
+          class="chip"
+          class:on={activeTag === tag}
+          data-testid={`sidebar-tag-chip-${tag}`}
+          data-active={activeTag === tag}
+          aria-pressed={activeTag === tag}
+          onclick={() => toggleTag(tag)}
+        >
+          #{tag}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <nav data-testid="notes-list" aria-label="Notes">
     {#if store.loading && store.notes.length === 0}
       <p class="hint">Loading…</p>
@@ -44,9 +95,13 @@
       <p class="error" role="alert">Couldn't load notes: {store.error}</p>
     {:else if store.notes.length === 0}
       <p class="hint" data-testid="notes-list-empty">No notes yet.</p>
+    {:else if visibleNotes.length === 0}
+      <p class="hint" data-testid="notes-list-empty-filtered">
+        No notes tagged <strong>#{activeTag}</strong>.
+      </p>
     {:else}
       <ul>
-        {#each store.notes as note (note.id)}
+        {#each visibleNotes as note (note.id)}
           <li>
             <a
               href={`/n/${note.id}`}
@@ -102,6 +157,37 @@
   .new:disabled {
     opacity: 0.6;
     cursor: progress;
+  }
+
+  /* W-021 tag-filter chips. Wrap into multiple rows so a noisy
+     vocabulary doesn't push the new-note button off-screen. */
+  .tagchips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .chip {
+    appearance: none;
+    border: 1px solid #cfcfcf;
+    background: #fff;
+    color: #555;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .chip:hover {
+    border-color: #5b8def;
+    color: #333;
+  }
+
+  .chip.on {
+    background: #5b8def;
+    border-color: #5b8def;
+    color: #fff;
   }
 
   nav {
