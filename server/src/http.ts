@@ -25,6 +25,7 @@ import { createRepositories } from './db/repositories/index.js';
 import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
+import { createCommentsApp } from './comments/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
 import { createUsersApp } from './users/routes.js';
@@ -104,12 +105,16 @@ export function buildBartlebyHttpApp(
   // notes routes so unauthenticated callers can't enumerate the friends
   // list.
   root.use('/users', auth_gate);
+  // C-007 comments endpoints (both /notes/:id/comments and /comments/:id/*).
+  root.use('/comments/*', auth_gate);
   const notes = createNotesApp({ repos });
   root.route('/', notes);
   const search = createSearchApp({ repos });
   root.route('/', search);
   const users = createUsersApp({ allowlist, store });
   root.route('/', users);
+  const comments = createCommentsApp({ repos });
+  root.route('/', comments);
 
   return { app: root, store };
 }
