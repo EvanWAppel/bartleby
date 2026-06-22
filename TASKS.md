@@ -141,7 +141,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 
 `textual` + `y-py`. All tests use `textual.pilot` for UI assertions and pytest fixtures for server setup. Depends on V-* and A-006/A-007/A-008 (device-code flow).
 
-- [ ] **T-001** App skeleton: `Notes` pane (left), `Editor` pane (main), `StatusBar` (bottom). Empty placeholder content. (test: pilot snapshot of layout regions.)
+- [x] **T-001** App skeleton: `Notes` pane (left), `Editor` pane (main), `StatusBar` (bottom). Empty placeholder content. (test: pilot snapshot of layout regions.)
 - [ ] **T-002** Device-code first-run: if no token in keychain, print device-code URL + code, poll until approved, store token. (test: integration test against a mock auth server runs the full flow.)
 - [ ] **T-003** y-py connection layer: connects to `wss://.../collab/note:<id>` with Bearer token, subscribes to a YDoc, exposes `apply_local_op(op)` and `on_remote_update(callback)`. (test: two clients on same room see each other's updates.)
 - [ ] **T-004** Renderer: walks the ProseMirror-compatible Yjs document and produces a textual `RichLog` (or custom widget) representation. Supports: paragraphs, H1–H6, bold/italic/strike (rich text styles), links (underline + color, footnoted), bullet/ordered lists, blockquote (left bar), task lists (`[ ]` / `[x]`), code blocks (bordered, syntax-highlighted via pygments). (test: snapshot per node type.)
