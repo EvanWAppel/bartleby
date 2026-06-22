@@ -1,7 +1,7 @@
 <script lang="ts">
-  // W-015: right pane tabs (Comments / Backlinks / History). Tab CONTENT
-  // is intentionally placeholder — the real panes ship with W-017
-  // (comments), W-016 (backlinks), W-019 (history/snapshots).
+  // W-015: right pane tabs (Comments / Backlinks / History). The
+  // Backlinks tab body is now live (W-016 -> BacklinksPane); Comments
+  // and History stay placeholder pending W-017 / W-019.
   //
   // The active tab is persisted per note in localStorage so coming back
   // to a note feels sticky to whichever pane you were just reading. We
@@ -15,12 +15,16 @@
   // likely to want at-a-glance. Easy to flip if telemetry says otherwise.
 
   import { onMount } from 'svelte';
+  import BacklinksPane from './BacklinksPane.svelte';
 
   type RightPaneTab = 'comments' | 'backlinks' | 'history';
 
+  // Tab metadata. `placeholder` is the v1 stub copy for tabs whose real
+  // body hasn't shipped yet; the Backlinks tab renders BacklinksPane
+  // directly and ignores the placeholder field.
   const TABS: { id: RightPaneTab; label: string; placeholder: string }[] = [
     { id: 'comments', label: 'Comments', placeholder: 'Comments will appear here. (W-017)' },
-    { id: 'backlinks', label: 'Backlinks', placeholder: 'Backlinks will appear here. (W-016)' },
+    { id: 'backlinks', label: 'Backlinks', placeholder: '' },
     { id: 'history', label: 'History', placeholder: 'History will appear here. (W-019)' },
   ];
 
@@ -101,7 +105,11 @@
         class="panel"
         data-testid={`right-pane-panel-${tab.id}`}
       >
-        <p class="placeholder">{tab.placeholder}</p>
+        {#if tab.id === 'backlinks'}
+          <BacklinksPane {noteId} />
+        {:else}
+          <p class="placeholder">{tab.placeholder}</p>
+        {/if}
       </div>
     {/if}
   {/each}
