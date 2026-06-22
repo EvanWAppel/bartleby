@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 180 180">
+  <defs>
+    <clipPath id="b-clip"><rect width="180" height="180" rx="40" ry="40"></rect></clipPath>
+    <radialGradient id="b-bg" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#0C200C"></stop>
+      <stop offset="100%" stop-color="#050D05"></stop>
+    </radialGradient>
+    <filter id="b-glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"></feGaussianBlur>
+      <feMerge>
+        <feMergeNode in="blur"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
+  </defs>
+  <g clip-path="url(#b-clip)">
+    <rect width="180" height="180" fill="url(#b-bg)"></rect>
+    <text x="90" y="108" font-family="Courier New,Courier,monospace" font-size="58" font-weight="bold" fill="#33FF55" text-anchor="middle" filter="url(#b-glow)">&gt;_</text>
+  </g>
+</svg>
