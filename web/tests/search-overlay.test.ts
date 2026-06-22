@@ -137,13 +137,13 @@ test('Cmd-K inside the editor does NOT open the search overlay (W-020 + W-009 co
   await page.getByTestId('editor-toolbar').waitFor({ state: 'visible' });
   const editor = page.getByTestId('editor').locator('.ProseMirror');
   await editor.click();
-  // Type + select something so the link popover has a selection to
-  // attach the link to (Mod-K on an empty selection is a W-009 no-op).
+  // Type + select-all so the link popover has a selection to attach
+  // the link to (Mod-K on an empty selection is a W-009 no-op). Ctrl+A
+  // is more reliable than shift-arrow under parallel-load test runs —
+  // PM doesn't always pick up a clean selection from synthetic
+  // ArrowRight events when the system is busy.
   await page.keyboard.type('linkable');
-  await page.keyboard.press('Home');
-  for (let i = 0; i < 'linkable'.length; i += 1) {
-    await page.keyboard.press('Shift+ArrowRight');
-  }
+  await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.press('ControlOrMeta+k');
   // The editor's link popover opens; the search overlay does NOT.
   await expect(page.getByTestId('link-popover')).toBeVisible();
