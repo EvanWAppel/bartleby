@@ -12,8 +12,16 @@
 
 import { describe, expect } from 'vitest';
 import { Hono } from 'hono';
+import * as Y from 'yjs';
+import {
+  prosemirrorToYXmlFragment,
+  absolutePositionToRelativePosition,
+  initProseMirrorDoc,
+} from 'y-prosemirror';
+import { schema } from '../derived/schema.js';
 import { createTestDatabase } from '../db/test-fixture.js';
 import { createRepositories } from '../db/repositories/index.js';
+import { createInMemoryAccessor } from '../snapshots/yjs-access.js';
 import { errorHandler } from '../http/errors.js';
 import type { AuthVars, User } from '../auth/index.js';
 import { createCommentsApp } from './routes.js';
@@ -85,6 +93,7 @@ interface CommentDto {
   body: string;
   created_at: string;
   resolved_at: string | null;
+  is_orphaned: boolean;
 }
 
 describe('POST /notes/:id/comments (C-007)', () => {
@@ -118,6 +127,7 @@ describe('POST /notes/:id/comments (C-007)', () => {
     expect(body.body).toBe('this is a comment');
     expect(body.created_at).toBe(FIXED_NOW_ISO);
     expect(body.resolved_at).toBeNull();
+    expect(body.is_orphaned).toBe(false);
     expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -321,6 +331,170 @@ describe('PATCH /comments/:id/resolve + /reopen (C-007)', () => {
     expect(r.status).toBe(404);
     const r2 = await app.request('/comments/no-such/reopen', { method: 'PATCH' });
     expect(r2.status).toBe(404);
+  });
+});
+
+describe('POST /notes/:id/comments (C-009: original_quote snapshot)', () => {
+  // Builds the same shape the web client does in comment-anchor.ts so
+  // the server has a real RelativePosition pair to resolve.
+  function anchorFor(ydoc: Y.Doc, from: number, to: number): string {
+    const fragment = ydoc.getXmlFragment('prosemirror');
+    const { mapping } = initProseMirrorDoc(fragment, schema);
+    const fromRel = absolutePositionToRelativePosition(from, fragment, mapping as never);
+    const toRel = absolutePositionToRelativePosition(to, fragment, mapping as never);
+    return JSON.stringify({
+      from: Y.relativePositionToJSON(fromRel),
+      to: Y.relativePositionToJSON(toRel),
+    });
+  }
+
+  function seedYDoc(text: string): Y.Doc {
+    const ydoc = new Y.Doc();
+    const fragment = ydoc.getXmlFragment('prosemirror');
+    prosemirrorToYXmlFragment(
+      schema.node('doc', null, [schema.node('paragraph', null, [schema.text(text)])]),
+      fragment,
+    );
+    return ydoc;
+  }
+
+  test('server resolves anchor against the live YDoc and overrides the client-supplied quote', async ({
+    db,
+  }) => {
+    const repos = createRepositories(db);
+    const docs = new Map<string, Y.Doc>();
+    const accessor = createInMemoryAccessor(docs);
+
+    const app = new Hono<{ Variables: AuthVars }>();
+    app.onError(errorHandler());
+    app.use('*', async (c, next) => {
+      c.set('user', TEST_USER);
+      await next();
+    });
+    app.route('/', createNotesApp({ repos, now: () => FIXED_NOW }));
+    app.route('/', createCommentsApp({ repos, now: () => FIXED_NOW, yjs: accessor }));
+
+    const noteRes = await app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'host' }),
+    });
+    const noteId = ((await noteRes.json()) as { id: string }).id;
+
+    // Drop a YDoc into the accessor under the new note's id.
+    docs.set(noteId, seedYDoc('hello world'));
+    const anchor = anchorFor(docs.get(noteId)!, 7, 12); // "world"
+
+    const res = await app.request(`/notes/${noteId}/comments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        anchor,
+        // Client-supplied quote is wrong on purpose — server should
+        // overwrite from the live doc.
+        original_quote: 'something stale the client sent',
+        body: 'orig-quote check',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as CommentDto;
+    expect(created.original_quote).toBe('world');
+  });
+
+  test('falls back to client-supplied quote when no YDoc accessor is wired', async ({ db }) => {
+    const repos = createRepositories(db);
+    const app = new Hono<{ Variables: AuthVars }>();
+    app.onError(errorHandler());
+    app.use('*', async (c, next) => {
+      c.set('user', TEST_USER);
+      await next();
+    });
+    app.route('/', createNotesApp({ repos, now: () => FIXED_NOW }));
+    // No yjs in deps.
+    app.route('/', createCommentsApp({ repos, now: () => FIXED_NOW }));
+
+    const noteRes = await app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'host' }),
+    });
+    const noteId = ((await noteRes.json()) as { id: string }).id;
+
+    const res = await app.request(`/notes/${noteId}/comments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        anchor: '{"from":{},"to":{}}',
+        original_quote: 'client quote',
+        body: 'no yjs accessor here',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as CommentDto).original_quote).toBe('client quote');
+  });
+
+  test('falls back to client-supplied quote when anchor does not resolve at create time', async ({
+    db,
+  }) => {
+    const repos = createRepositories(db);
+    const docs = new Map<string, Y.Doc>();
+    const accessor = createInMemoryAccessor(docs);
+
+    const app = new Hono<{ Variables: AuthVars }>();
+    app.onError(errorHandler());
+    app.use('*', async (c, next) => {
+      c.set('user', TEST_USER);
+      await next();
+    });
+    app.route('/', createNotesApp({ repos, now: () => FIXED_NOW }));
+    app.route('/', createCommentsApp({ repos, now: () => FIXED_NOW, yjs: accessor }));
+
+    const noteRes = await app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'host' }),
+    });
+    const noteId = ((await noteRes.json()) as { id: string }).id;
+    // No YDoc seeded → accessor returns an empty state → resolveAnchorToText
+    // returns null because the doc has no PM content. Server should fall
+    // back to the client's quote rather than store nothing.
+
+    const res = await app.request(`/notes/${noteId}/comments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        anchor:
+          '{"from":{"type":null,"tname":"x","item":null,"assoc":0},"to":{"type":null,"tname":"x","item":null,"assoc":0}}',
+        original_quote: 'best-effort client snapshot',
+        body: 'unresolvable anchor',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as CommentDto).original_quote).toBe('best-effort client snapshot');
+  });
+});
+
+describe('GET /notes/:id/comments (C-008: is_orphaned in response)', () => {
+  test('is_orphaned is included as a boolean and defaults to false on a fresh insert', async ({
+    db,
+  }) => {
+    const built = buildApp(db);
+    const noteRes = await built.app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'host' }),
+    });
+    const noteId = ((await noteRes.json()) as { id: string }).id;
+    await built.app.request(`/notes/${noteId}/comments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ anchor: '', original_quote: '', body: 'fresh' }),
+    });
+
+    const listRes = await built.app.request(`/notes/${noteId}/comments`);
+    const all = (await listRes.json()) as { comments: CommentDto[] };
+    expect(all.comments).toHaveLength(1);
+    expect(all.comments[0]?.is_orphaned).toBe(false);
   });
 });
 

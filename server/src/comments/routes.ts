@@ -21,11 +21,14 @@
 
 import { Hono, type Context } from 'hono';
 import { randomUUID } from 'node:crypto';
+import * as Y from 'yjs';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import type { CommentRow } from '../db/repositories/index.js';
 import { extractMentionEmails } from '../derived/mentions.js';
 import { NotFoundError, ValidationError } from '../http/errors.js';
+import type { YjsDocAccessor } from '../snapshots/yjs-access.js';
+import { resolveAnchorToText } from './anchor.js';
 
 type CommentsContext = Context<{ Variables: AuthVars }>;
 
@@ -33,6 +36,13 @@ export interface CommentsAppDeps {
   repos: Repositories;
   /** Injectable clock so tests can pin timestamps. */
   now?: () => Date;
+  /**
+   * C-009: when present, the create handler resolves the anchor against
+   * the live YDoc to snapshot `original_quote`. When absent (e.g. unit
+   * tests that don't exercise the Yjs path) the handler falls back to
+   * the client-supplied value.
+   */
+  yjs?: YjsDocAccessor;
 }
 
 async function parseJsonBody(c: CommentsContext): Promise<unknown> {
@@ -111,9 +121,36 @@ export function createCommentsApp(deps: CommentsAppDeps): Hono<{ Variables: Auth
     }
     const body = (await parseJsonBody(c)) as Record<string, unknown>;
     const anchor = asString(body['anchor'] ?? '', 'anchor');
-    const originalQuote = asString(body['original_quote'] ?? '', 'original_quote');
+    const clientQuote = asString(body['original_quote'] ?? '', 'original_quote');
     const text = asRequiredBody(body['body']);
     const user = c.get('user');
+
+    // C-009: the source-of-truth for `original_quote` is the text
+    // currently between the anchor endpoints in the live YDoc. We
+    // recompute server-side so the snapshot can't drift from the
+    // doc (e.g. if the client raced an edit between selecting and
+    // posting). Fall back to the client-supplied value when:
+    //   - no Yjs accessor is wired (unit tests)
+    //   - the anchor is empty/unparseable
+    //   - the doc has no PM content yet
+    //   - the anchor doesn't resolve at create time (rare; treat as
+    //     "we couldn't snapshot" and store the client's best guess)
+    let originalQuote = clientQuote;
+    if (deps.yjs !== undefined && anchor !== '') {
+      try {
+        const encoded = await deps.yjs.read(noteId);
+        const ydoc = new Y.Doc();
+        Y.applyUpdate(ydoc, encoded);
+        const resolved = resolveAnchorToText(ydoc, anchor);
+        if (resolved !== null) {
+          originalQuote = resolved;
+        }
+      } catch {
+        // Reading the doc shouldn't sink the create. Keep the
+        // client-supplied quote and move on.
+      }
+    }
+
     const row = repos.comments.insert({
       id: randomUUID(),
       note_id: noteId,

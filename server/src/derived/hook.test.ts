@@ -4,7 +4,11 @@
 
 import { describe, expect } from 'vitest';
 import * as Y from 'yjs';
-import { prosemirrorToYXmlFragment } from 'y-prosemirror';
+import {
+  prosemirrorToYXmlFragment,
+  absolutePositionToRelativePosition,
+  initProseMirrorDoc,
+} from 'y-prosemirror';
 import pino from 'pino';
 import { test } from '../db/test-fixture.js';
 import { createRepositories } from '../db/repositories/index.js';
@@ -129,6 +133,73 @@ describe('createDerivedStateHook (S-009)', () => {
     await expect(
       hook.onStoreDocument({ document: ydoc, documentName: 'no-such-note' }),
     ).resolves.toBeUndefined();
+  });
+
+  test('C-008: marks a comment is_orphaned when its anchored text is deleted', async ({ db }) => {
+    seedNote(db, 'note-orphan');
+    const repos = createRepositories(db);
+    const hook = createDerivedStateHook({ repos, logger, now: () => NOW });
+
+    // Seed a doc with "hello world" and capture an anchor for "world".
+    const ydoc = buildYDocWithParagraph('hello world');
+    const fragment = ydoc.getXmlFragment('prosemirror');
+    const { mapping } = initProseMirrorDoc(fragment, schema);
+    const fromRel = absolutePositionToRelativePosition(7, fragment, mapping as never);
+    const toRel = absolutePositionToRelativePosition(12, fragment, mapping as never);
+    const anchor = JSON.stringify({
+      from: Y.relativePositionToJSON(fromRel),
+      to: Y.relativePositionToJSON(toRel),
+    });
+
+    const comment = repos.comments.insert({
+      id: 'c-orphan',
+      note_id: 'note-orphan',
+      author_id: 'u1',
+      parent_comment_id: null,
+      anchor,
+      original_quote: 'world',
+      body: 'a comment',
+      created_at: NOW.toISOString(),
+    });
+    expect(comment.is_orphaned).toBe(false);
+
+    // First pass: doc is unchanged → comment stays anchored.
+    await hook.onStoreDocument({ document: ydoc, documentName: 'note-orphan' });
+    expect(repos.comments.findById('c-orphan')?.is_orphaned).toBe(false);
+
+    // Now wipe the paragraph and rebuild with different text — the
+    // anchored items get tombstoned and the anchor can't resolve.
+    ydoc.transact(() => {
+      fragment.delete(0, fragment.length);
+      prosemirrorToYXmlFragment(
+        schema.node('doc', null, [
+          schema.node('paragraph', null, [schema.text('completely different content')]),
+        ]),
+        fragment,
+      );
+    });
+    await hook.onStoreDocument({ document: ydoc, documentName: 'note-orphan' });
+    expect(repos.comments.findById('c-orphan')?.is_orphaned).toBe(true);
+  });
+
+  test('C-008: orphans an unparseable anchor', async ({ db }) => {
+    seedNote(db, 'note-bad-anchor');
+    const repos = createRepositories(db);
+    const hook = createDerivedStateHook({ repos, logger, now: () => NOW });
+    repos.comments.insert({
+      id: 'c-bad',
+      note_id: 'note-bad-anchor',
+      author_id: 'u1',
+      parent_comment_id: null,
+      anchor: '', // empty / unparseable
+      original_quote: '',
+      body: 'no anchor',
+      created_at: NOW.toISOString(),
+    });
+
+    const ydoc = buildYDocWithParagraph('whatever');
+    await hook.onStoreDocument({ document: ydoc, documentName: 'note-bad-anchor' });
+    expect(repos.comments.findById('c-bad')?.is_orphaned).toBe(true);
   });
 
   test('skips trashed notes (do not derive state for soft-deleted docs)', async ({ db }) => {
