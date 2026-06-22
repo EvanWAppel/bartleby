@@ -127,6 +127,42 @@ export async function retagNote(
   return (await res.json()) as NoteSummary;
 }
 
+// W-022: soft-delete / restore / hard-delete + list-trashed helpers.
+// The server uses DELETE /notes/:id for soft-delete and
+// DELETE /notes/:id?forever=true for hard-delete (only allowed on
+// already-trashed rows). POST /notes/:id/restore clears trashed_at.
+
+export async function softDeleteNote(id: string, opts: { fetch?: FetchLike } = {}): Promise<void> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw await parseError(res);
+}
+
+export async function hardDeleteNote(id: string, opts: { fetch?: FetchLike } = {}): Promise<void> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}?forever=true`, { method: 'DELETE' });
+  if (!res.ok) throw await parseError(res);
+}
+
+export async function restoreNote(id: string, opts: { fetch?: FetchLike } = {}): Promise<void> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}/restore`, { method: 'POST' });
+  if (!res.ok) throw await parseError(res);
+}
+
+export async function listTrashed(
+  opts: { signal?: AbortSignal; fetch?: FetchLike } = {},
+): Promise<NoteSummary[]> {
+  const f = opts.fetch ?? fetch;
+  const res = await f('/notes/trash', {
+    headers: { accept: 'application/json' },
+    signal: opts.signal,
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as NotesListResponse;
+  return body.notes;
+}
+
 // W-016: typed inbound-link list for the right pane's Backlinks tab.
 // Server shape (S-007) is { backlinks: [{ source_id, source_title,
 // link_text }] }; trashed sources are already filtered server-side.

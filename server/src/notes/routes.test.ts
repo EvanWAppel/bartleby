@@ -306,6 +306,47 @@ describe('DELETE /notes/:id (S-005) + POST /notes/:id/restore (S-006)', () => {
     const res = await app.request('/notes/missing/restore', { method: 'POST' });
     expect(res.status).toBe(404);
   });
+
+  // W-022: forever=true hard-deletes a trashed note.
+  test('DELETE ?forever=true hard-deletes a trashed note (W-022)', async ({ db }) => {
+    const { app, repos } = buildTestNotesApp(db, { now: fixedNow });
+    const r = await app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'doomed' }),
+    });
+    const { id } = (await r.json()) as { id: string };
+    // Soft-delete first so the row is in the trash.
+    await app.request(`/notes/${id}`, { method: 'DELETE' });
+    expect(repos.notes.findById(id)?.trashed_at).not.toBeNull();
+    // Now hard-delete.
+    const forever = await app.request(`/notes/${id}?forever=true`, { method: 'DELETE' });
+    expect(forever.status).toBe(204);
+    expect(repos.notes.findById(id)).toBeUndefined();
+  });
+
+  test('DELETE ?forever=true on a non-trashed note returns 400 (W-022 safety)', async ({ db }) => {
+    // Hard delete needs the note to already be in the trash — refuse
+    // a forever delete on a live note so a misclick can't skip the
+    // soft-delete safety net.
+    const { app, repos } = buildTestNotesApp(db, { now: fixedNow });
+    const r = await app.request('/notes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'live' }),
+    });
+    const { id } = (await r.json()) as { id: string };
+    const res = await app.request(`/notes/${id}?forever=true`, { method: 'DELETE' });
+    expect(res.status).toBe(400);
+    // Still live.
+    expect(repos.notes.findById(id)?.trashed_at).toBeNull();
+  });
+
+  test('DELETE ?forever=true 404 on unknown id (W-022)', async ({ db }) => {
+    const { app } = buildTestNotesApp(db);
+    const res = await app.request('/notes/missing?forever=true', { method: 'DELETE' });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('auth gating', () => {

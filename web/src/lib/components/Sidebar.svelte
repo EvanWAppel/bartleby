@@ -20,8 +20,11 @@
 
   import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { NotesStore } from '$lib/state/notes-store.svelte';
   import { MentionsStore } from '$lib/state/mentions-store.svelte';
+  import { softDeleteNote, type NoteSummary } from '$lib/api/notes';
+  import ConfirmDialog from './ConfirmDialog.svelte';
 
   interface Props {
     user: { display_name: string; color: string } | null;
@@ -70,6 +73,30 @@
   function isActive(id: string): boolean {
     return page.url.pathname === `/n/${id}`;
   }
+
+  // W-024 per-row soft-delete confirmation. We open the modal with
+  // the clicked note as the target; confirming soft-deletes and (if
+  // the user was currently viewing that note) navigates them off
+  // /n/[deleted-id] to /trash. The NotesStore poll prunes the row
+  // from the visible list within ~1s.
+  let trashTarget: NoteSummary | null = $state(null);
+  let trashing = $state(false);
+
+  async function onConfirmTrash(): Promise<void> {
+    const target = trashTarget;
+    if (target === null || trashing) return;
+    trashing = true;
+    try {
+      await softDeleteNote(target.id);
+      const wasViewing = page.url.pathname === `/n/${target.id}`;
+      trashTarget = null;
+      if (wasViewing) {
+        await goto('/trash');
+      }
+    } finally {
+      trashing = false;
+    }
+  }
 </script>
 
 <aside class="sidebar" data-testid="sidebar" aria-label="Notes navigation">
@@ -113,7 +140,7 @@
     {:else}
       <ul>
         {#each visibleNotes as note (note.id)}
-          <li>
+          <li class="note-row">
             <a
               href={`/n/${note.id}`}
               class:active={isActive(note.id)}
@@ -122,6 +149,18 @@
             >
               {note.title}
             </a>
+            <button
+              type="button"
+              class="row-trash"
+              data-testid={`sidebar-row-trash-${note.id}`}
+              aria-label={`Move "${note.title}" to trash`}
+              title="Move to trash"
+              onclick={() => {
+                trashTarget = note;
+              }}
+            >
+              🗑
+            </button>
           </li>
         {/each}
       </ul>
@@ -152,9 +191,23 @@
     <footer class="who" data-testid="signed-in-user">
       <span class="avatar" style="background-color: {user.color}" aria-hidden="true"></span>
       <span class="name">{user.display_name}</span>
+      <a class="trash-link" href="/trash" data-testid="sidebar-trash-link">Trash</a>
     </footer>
   {/if}
 </aside>
+
+{#if trashTarget !== null}
+  <ConfirmDialog
+    title="Move to trash?"
+    body={`"${trashTarget.title}" will be moved to the trash. You can restore it later, but it will be auto-purged 30 days from now.`}
+    confirmLabel="Move to trash"
+    confirmTone="danger"
+    onConfirm={() => void onConfirmTrash()}
+    onCancel={() => {
+      trashTarget = null;
+    }}
+  />
+{/if}
 
 <style>
   .sidebar {
@@ -234,7 +287,15 @@
     gap: 1px;
   }
 
-  li a {
+  .note-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.15rem;
+  }
+
+  .note-row > a {
+    flex: 1;
+    min-width: 0;
     display: block;
     padding: 0.4rem 0.6rem;
     border-radius: 4px;
@@ -245,13 +306,35 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  li a:hover {
+  .note-row > a:hover {
     background: #ececec;
   }
-  li a.active {
+  .note-row > a.active {
     background: #d0e3ff;
     color: #0b3e7f;
     font-weight: 500;
+  }
+
+  /* W-024 per-row trash button. Faded by default; opaque on row
+     hover. Always tabbable + always clickable so the test (and
+     keyboard users) can hit it without hovering. */
+  .row-trash {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0 0.4rem;
+    color: #999;
+    cursor: pointer;
+    font-size: 0.9rem;
+    border-radius: 4px;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+  }
+  .row-trash:hover,
+  .row-trash:focus,
+  .note-row:hover .row-trash {
+    opacity: 1;
+    color: #c0392b;
   }
 
   .hint {
@@ -309,6 +392,17 @@
     padding-top: 0.5rem;
     border-top: 1px solid #e0e0e0;
     font-size: 0.85rem;
+  }
+
+  .trash-link {
+    margin-left: auto;
+    color: #888;
+    text-decoration: none;
+    font-size: 0.75rem;
+  }
+  .trash-link:hover {
+    color: #c0392b;
+    text-decoration: underline;
   }
 
   .avatar {
