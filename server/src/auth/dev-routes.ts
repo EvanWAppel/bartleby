@@ -15,10 +15,16 @@ import { Hono } from 'hono';
 import { issueSessionJwt, SESSION_TTL_SECONDS, serializeSessionCookie } from './session.js';
 import type { SessionConfig } from './session.js';
 import type { SessionStore } from './store.js';
+import type { Repositories } from '../db/repositories/index.js';
+import { ensureUserExists } from '../notes/ensure-user.js';
 
 export interface DevAuthAppDeps {
   sessionConfig: SessionConfig;
   store: SessionStore;
+  /** Optional D repos; when provided, sign-in also bridges the session
+   * user into D's `users` table so M-001/M-002 can resolve mentions
+   * for someone who has signed in but not yet created content. */
+  repos?: Repositories;
 }
 
 interface SignInBody {
@@ -49,6 +55,11 @@ export function createDevAuthApp(deps: DevAuthAppDeps): Hono {
     }
     const displayName = asString(body.displayName) ?? email.split('@')[0]!;
     const user = await deps.store.upsertUserByEmail({ email, displayName });
+    // Bridge into D's users table so subsequent mention extraction can
+    // resolve this user by email even before they create any content.
+    if (deps.repos !== undefined) {
+      ensureUserExists(deps.repos.users, user);
+    }
 
     const jti = randomUUID();
     const token = await issueSessionJwt(deps.sessionConfig, {
