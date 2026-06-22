@@ -8,6 +8,7 @@
   import { page } from '$app/state';
   import Sidebar from './Sidebar.svelte';
   import NoteRightPane from './NoteRightPane.svelte';
+  import SearchOverlay from './SearchOverlay.svelte';
 
   interface Props {
     user: { display_name: string; color: string } | null;
@@ -38,6 +39,10 @@
     {/if}
   </aside>
 </div>
+
+<!-- W-020 search overlay. Owns its own Cmd-K window listener so the
+     shortcut works from anywhere outside the editor. -->
+<SearchOverlay />
 
 <style>
   .shell {
