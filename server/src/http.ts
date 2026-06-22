@@ -9,6 +9,7 @@
 import type { Database } from 'better-sqlite3';
 import { serve, type ServerType } from '@hono/node-server';
 import { Hono } from 'hono';
+import type { Hocuspocus } from '@hocuspocus/server';
 import type { Logger } from 'pino';
 import {
   buildSessionConfig,
@@ -28,6 +29,8 @@ import { createDevAuthApp } from './auth/dev-routes.js';
 import { createCommentsApp } from './comments/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
+import { createSnapshotsApp } from './snapshots/routes.js';
+import { createHocuspocusAccessor, type YjsDocAccessor } from './snapshots/yjs-access.js';
 import { createUsersApp } from './users/routes.js';
 
 export interface BartlebyHttpServer {
@@ -42,11 +45,17 @@ export interface BartlebyHttpOptions {
   env: Record<string, string | undefined>;
   db: Database;
   logger: Logger;
+  /** Optional: when present, mounts the C-002..C-006 snapshot routes. */
+  hocuspocus?: Hocuspocus;
 }
 
 export interface BuildHttpAppDeps {
   db: Database;
   logger: Logger;
+  /** Optional Yjs accessor for snapshot endpoints (C-002..C-006).
+   * Tests that don't exercise snapshots can omit this; the snapshot
+   * routes get mounted only when an accessor is supplied. */
+  yjs?: YjsDocAccessor;
 }
 
 export function buildBartlebyHttpApp(
@@ -115,6 +124,10 @@ export function buildBartlebyHttpApp(
   root.route('/', users);
   const comments = createCommentsApp({ repos });
   root.route('/', comments);
+  if (deps.yjs !== undefined) {
+    const snapshots = createSnapshotsApp({ repos, yjs: deps.yjs });
+    root.route('/', snapshots);
+  }
 
   return { app: root, store };
 }
@@ -122,9 +135,12 @@ export function buildBartlebyHttpApp(
 export function createBartlebyHttpServer(
   options: BartlebyHttpOptions,
 ): Promise<BartlebyHttpServer> {
+  const yjs =
+    options.hocuspocus !== undefined ? createHocuspocusAccessor(options.hocuspocus) : undefined;
   const { app, store } = buildBartlebyHttpApp(options.env, {
     db: options.db,
     logger: options.logger,
+    yjs,
   });
   return new Promise((resolve) => {
     const server: ServerType = serve(
