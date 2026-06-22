@@ -157,3 +157,19 @@ export async function listBacklinks(
     linkText: b.link_text,
   }));
 }
+
+// W-027: fetch a single note as markdown (frontmatter + body). The
+// server's I-004 endpoint sets a `text/markdown` content type; the
+// "Copy as markdown" menu item dumps the result into the clipboard.
+export async function exportNoteMarkdown(
+  id: string,
+  opts: { signal?: AbortSignal; fetch?: FetchLike } = {},
+): Promise<string> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`/notes/${encodeURIComponent(id)}/export.md`, {
+    headers: { accept: 'text/markdown' },
+    signal: opts.signal,
+  });
+  if (!res.ok) throw await parseError(res);
+  return await res.text();
+}

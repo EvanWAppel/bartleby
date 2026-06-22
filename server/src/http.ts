@@ -27,6 +27,7 @@ import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
 import { createCommentsApp } from './comments/routes.js';
+import { createExportApp } from './export/routes.js';
 import { createMentionsApp } from './mentions/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
@@ -121,6 +122,9 @@ export function buildBartlebyHttpApp(
   // M-003/M-004 mentions endpoints.
   root.use('/mentions', auth_gate);
   root.use('/mentions/*', auth_gate);
+  // I-005 export-all endpoint (single-note export sits under /notes/*
+  // and is already gated above).
+  root.use('/export/*', auth_gate);
   const notes = createNotesApp({ repos });
   root.route('/', notes);
   const search = createSearchApp({ repos });
@@ -131,6 +135,8 @@ export function buildBartlebyHttpApp(
   root.route('/', comments);
   const mentions = createMentionsApp({ repos });
   root.route('/', mentions);
+  const exportApp = createExportApp({ repos });
+  root.route('/', exportApp);
   if (deps.yjs !== undefined) {
     const snapshots = createSnapshotsApp({ repos, yjs: deps.yjs });
     root.route('/', snapshots);
