@@ -57,6 +57,8 @@ def hocuspocus_server() -> Iterator[str]:
     """Boot the bartleby-server as a subprocess; yield its WebSocket base URL."""
     if shutil.which("npm") is None:
         pytest.skip("npm not on PATH; cannot start the integration server")
+    if not (SERVER_DIR / "node_modules").is_dir():
+        pytest.skip(f"{SERVER_DIR}/node_modules missing; run `npm --prefix server install`")
 
     port = _pick_free_port()
     env = {**os.environ, "PORT": str(port), "NPM_CONFIG_CACHE": "/tmp/bartleby-npm-cache"}
@@ -77,13 +79,15 @@ def hocuspocus_server() -> Iterator[str]:
         yield f"ws://127.0.0.1:{port}"
     finally:
         # Terminate the entire process group: npm spawns tsx which spawns node.
-        # ProcessLookupError just means the group is already gone — fine.
-        with contextlib.suppress(ProcessLookupError):
+        # ProcessLookupError: the group is already gone — fine.
+        # PermissionError: some sandboxed environments deny killpg on subprocesses
+        # we spawned; the OS will reap them at process exit, so skip teardown.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(process.pid, signal.SIGTERM)
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
 

@@ -1,9 +1,25 @@
-"""Bartleby textual app for Phase 0.
+"""Bartleby textual app.
 
-Renders the body of a single Yjs document shared via Hocuspocus and forwards
-local keystrokes back into the YDoc. V-008 uses naive full-text replacement
-on every TextArea change; later phases will swap in a position-aware diff
-when a real markdown editor lands.
+Phase 0 (V-007/V-008) shipped a single editable widget bound to a Yjs
+document via Hocuspocus. T-001 restructures the UI into the three-pane
+shape the rest of Workstream T will populate:
+
+    +---------------------------------------------------+
+    |                   Header                          |
+    +-----------+---------------------------------------+
+    | #notes-   |          #editor-pane                 |
+    |  pane     |                                       |
+    |           |                                       |
+    +-----------+---------------------------------------+
+    |              #status-bar                          |
+    +---------------------------------------------------+
+    |                   Footer                          |
+    +---------------------------------------------------+
+
+Each region carries a stable ``id`` attribute so later tasks (T-007 notes
+list, T-004 renderer, T-018 status bar) can target them without touching
+the skeleton. The Phase 0 editor (BodyEditor) lives inside ``#editor-pane``
+so the existing live-collab behavior is preserved.
 """
 
 from __future__ import annotations
@@ -14,7 +30,8 @@ from typing import ClassVar
 import y_py as Y
 from textual.app import App, ComposeResult
 from textual.binding import BindingType
-from textual.widgets import Footer, Header, TextArea
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Footer, Header, Static, TextArea
 
 from bartleby_tui.connection import HocuspocusConnection
 
@@ -40,11 +57,43 @@ class BodyEditor(TextArea):
 
 
 class BartlebyApp(App[None]):
-    """Bartleby TUI. Phase 0: a single editable view onto one hardcoded room."""
+    """Bartleby TUI.
+
+    T-001 owns the three-pane skeleton. The Phase 0 connection logic
+    (V-007/V-008) still drives the editor inside ``#editor-pane`` so the
+    existing live-collab tests keep passing.
+
+    ``connect_on_mount=False`` lets layout-only tests mount the app
+    without a running Hocuspocus server.
+    """
 
     CSS = """
     Screen {
         background: $surface;
+    }
+
+    #main-row {
+        height: 1fr;
+    }
+
+    #notes-pane {
+        width: 24;
+        min-width: 16;
+        border-right: solid $primary;
+        padding: 1;
+    }
+
+    #editor-pane {
+        width: 1fr;
+        padding: 0;
+    }
+
+    #status-bar {
+        dock: bottom;
+        height: 1;
+        background: $boost;
+        color: $text;
+        padding: 0 1;
     }
     """
 
@@ -56,10 +105,12 @@ class BartlebyApp(App[None]):
         self,
         server_url: str = DEFAULT_SERVER_URL,
         doc_name: str = DEFAULT_DOC_NAME,
+        connect_on_mount: bool = True,
     ) -> None:
         super().__init__()
         self._server_url = server_url
         self._doc_name = doc_name
+        self._connect_on_mount = connect_on_mount
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
@@ -81,12 +132,23 @@ class BartlebyApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        view = BodyEditor(text="", id="body", show_line_numbers=False)
-        self._body_view = view
-        yield view
+        with Horizontal(id="main-row"):
+            # T-007 will replace this Static with a live note list widget.
+            yield Static("Notes", id="notes-pane")
+            with Vertical(id="editor-pane"):
+                view = BodyEditor(text="", id="body", show_line_numbers=False)
+                self._body_view = view
+                yield view
+        # T-018 will wire connection state + presence into this bar.
+        yield Static("", id="status-bar")
         yield Footer()
 
     async def on_mount(self) -> None:
+        if not self._connect_on_mount:
+            if self._body_view is not None:
+                self._body_view.focus()
+            return
+
         log.info("connecting to %s room=%s", self._server_url, self._doc_name)
         self.connection = HocuspocusConnection(
             url=self._server_url,
