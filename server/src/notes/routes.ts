@@ -244,12 +244,29 @@ export function createNotesApp(deps: NotesAppDeps): Hono<{ Variables: AuthVars }
     return c.json(toSummary(refreshed!, tags));
   });
 
-  // DELETE /notes/:id — soft delete. S-005.
+  // DELETE /notes/:id — soft delete by default (S-005). With
+  // `?forever=true` performs a hard delete: removes the notes row and
+  // FK ON DELETE CASCADE wipes dependent comments/snapshots/backlinks/
+  // mentions/tags/note_titles_history. W-022's "Delete forever"
+  // button calls this with forever=true; the trash auto-purger (S-010)
+  // uses the same code path on the cutoff cohort.
   app.delete('/notes/:id', (c) => {
     const id = c.req.param('id');
     const existing = repos.notes.findById(id);
     if (existing === undefined) {
       throw new NotFoundError('note', id);
+    }
+    const forever = c.req.query('forever') === 'true';
+    if (forever) {
+      // Hard delete is only allowed once the note is already trashed —
+      // we never want a misclick "?forever=true" on a live note to
+      // skip the soft-delete safety net. If the operator wants to
+      // hard-delete a live note they have to soft-delete first.
+      if (existing.trashed_at === null) {
+        throw new ValidationError('note is not trashed; soft-delete first before forever=true');
+      }
+      repos.notes.hardDelete(id);
+      return c.body(null, 204);
     }
     repos.notes.softDelete(id, nowIso(deps));
     return c.body(null, 204);

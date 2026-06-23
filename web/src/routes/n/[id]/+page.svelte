@@ -2,12 +2,14 @@
   // /n/[id] — open one note. Desktop: title editor + ProseMirror.
   // Mobile: read-only reader + "open on desktop" banner (X-001..X-004).
 
+  import { goto } from '$app/navigation';
   import Editor from '$lib/Editor.svelte';
   import MobileReader from '$lib/MobileReader.svelte';
   import DesktopBanner from '$lib/DesktopBanner.svelte';
   import TitleEditor from '$lib/components/TitleEditor.svelte';
   import TagChipEditor from '$lib/components/TagChipEditor.svelte';
-  import { exportNoteMarkdown, type NoteSummary } from '$lib/api/notes';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import { exportNoteMarkdown, softDeleteNote, type NoteSummary } from '$lib/api/notes';
 
   interface Props {
     data: {
@@ -42,6 +44,25 @@
       copyState = 'idle';
     }, 2_000);
   }
+
+  // W-024 soft-delete confirmation. The trash button lives in the
+  // title-row area; clicking opens the modal, confirm soft-deletes
+  // and navigates the user away to /trash so they can immediately
+  // restore if they didn't mean it.
+  let confirmOpen = $state(false);
+  let deleting = $state(false);
+
+  async function onConfirmTrash(): Promise<void> {
+    if (deleting) return;
+    deleting = true;
+    try {
+      await softDeleteNote(data.id);
+      confirmOpen = false;
+      await goto('/trash');
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <div class="desktop">
@@ -66,11 +87,37 @@
           Copy as markdown
         {/if}
       </button>
+      <button
+        type="button"
+        class="trash-btn"
+        data-testid="note-view-trash"
+        aria-label="Move to trash"
+        title="Move to trash"
+        onclick={() => {
+          confirmOpen = true;
+        }}
+        disabled={deleting}
+      >
+        🗑
+      </button>
     </div>
     <TagChipEditor id={data.id} tags={data.note.tags} />
   {/key}
   <Editor room={data.id} user={data.user} />
 </div>
+
+{#if confirmOpen}
+  <ConfirmDialog
+    title="Move to trash?"
+    body={`"${data.note.title}" will be moved to the trash. You can restore it later, but it will be auto-purged 30 days from now.`}
+    confirmLabel="Move to trash"
+    confirmTone="danger"
+    onConfirm={() => void onConfirmTrash()}
+    onCancel={() => {
+      confirmOpen = false;
+    }}
+  />
+{/if}
 
 <div class="mobile">
   <header class="topbar">
@@ -135,6 +182,28 @@
   .copy-md[data-state='error'] {
     border-color: #c0392b;
     color: #c0392b;
+  }
+
+  .trash-btn {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #888;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .trash-btn:hover {
+    background: #fdecea;
+    color: #c0392b;
+    border-color: #e0a0a0;
+  }
+
+  .trash-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   @media (max-width: 767px) {

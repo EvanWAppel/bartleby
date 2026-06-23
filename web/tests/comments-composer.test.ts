@@ -89,11 +89,17 @@ test('a numbered marker renders in the body and clicking it focuses the thread (
   await page.getByTestId('editor-toolbar').waitFor({ state: 'visible' });
   const editor = page.getByTestId('editor').locator('.ProseMirror');
   await editor.click();
-  await page.keyboard.type('text to anchor');
-  // Select the entire paragraph via Home + Shift+End. We don't need a
-  // specific word — the test only verifies that ONE marker renders.
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Shift+End');
+  // Select a fixed-length suffix via End + Shift+ArrowLeft × N — the
+  // same selection pattern the W-018 spec test uses successfully.
+  // Ctrl+A would produce an AllSelection (doc-level) which the
+  // comment-selection plugin rejects; Home + Shift+End is flaky for
+  // reasons that look like synthetic-event timing in PM.
+  const anchor = 'anchor';
+  await page.keyboard.type(`text to ${anchor}`);
+  await page.keyboard.press('End');
+  for (let i = 0; i < anchor.length; i += 1) {
+    await page.keyboard.press('Shift+ArrowLeft');
+  }
   await page.getByTestId('comment-floating-toolbar-button').click();
   await page.getByTestId('comment-composer-body').fill('marker test');
   await page.getByTestId('comment-composer-submit').click();
