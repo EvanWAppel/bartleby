@@ -131,7 +131,7 @@ export function buildBartlebyHttpApp(
   root.route('/', search);
   const users = createUsersApp({ allowlist, store });
   root.route('/', users);
-  const comments = createCommentsApp({ repos });
+  const comments = createCommentsApp({ repos, yjs: deps.yjs });
   root.route('/', comments);
   const mentions = createMentionsApp({ repos });
   root.route('/', mentions);

@@ -45,6 +45,10 @@ export interface CommentRow {
   body: string;
   created_at: string;
   resolved_at: string | null;
+  /** C-008: stored as INTEGER 0/1 in SQLite; surfaced as boolean here so
+   * the wire DTO and clients don't have to know it's a denormalized int.
+   * The repository converts at the boundary. */
+  is_orphaned: boolean;
 }
 
 export interface SnapshotRow {

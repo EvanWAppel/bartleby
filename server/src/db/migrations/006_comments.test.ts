@@ -35,12 +35,16 @@ describe('migration 006 comments (D-007)', () => {
     const cols = db.prepare(`PRAGMA table_info(comments)`).all() as ColumnInfo[];
     const byName = new Map(cols.map((c) => [c.name, c]));
 
+    // The full set after all migrations run. `is_orphaned` is added by
+    // migration 010 (C-008); migration 006's own contract is that the
+    // base columns below all exist with the documented types/NOT NULLs.
     expect([...byName.keys()].sort()).toEqual([
       'anchor',
       'author_id',
       'body',
       'created_at',
       'id',
+      'is_orphaned',
       'note_id',
       'original_quote',
       'parent_comment_id',

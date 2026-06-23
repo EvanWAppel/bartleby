@@ -24,6 +24,7 @@ import { extractMarkdown } from './markdown.js';
 import { extractTags } from './tags.js';
 import { extractBacklinks, resolveBacklinks, type TitleResolver } from './backlinks.js';
 import { extractMentionEmails } from './mentions.js';
+import { isAnchorOrphaned } from '../comments/anchor.js';
 
 export interface DerivedStateHookDeps {
   repos: Repositories;
@@ -120,6 +121,21 @@ export function createDerivedStateHook(deps: DerivedStateHookDeps): DerivedState
         mentionsInserted += 1;
       }
 
+      // C-008: comment orphan recompute. Walk every comment on this
+      // note (resolved or not) and refresh `is_orphaned` against the
+      // current YDoc. Resolved threads still get a refresh so a future
+      // snapshot restore that brings the anchored text back can un-
+      // orphan them automatically. We only write when the flag changes
+      // so we don't churn the table on every save.
+      let orphansUpdated = 0;
+      for (const comment of repos.comments.listAllByNote(documentName)) {
+        const nextOrphan = isAnchorOrphaned(document, comment.anchor);
+        if (nextOrphan !== comment.is_orphaned) {
+          repos.comments.setOrphaned(comment.id, nextOrphan);
+          orphansUpdated += 1;
+        }
+      }
+
       logger.debug(
         {
           documentName,
@@ -127,6 +143,7 @@ export function createDerivedStateHook(deps: DerivedStateHookDeps): DerivedState
           tagsCount: tags.length,
           backlinksCount: inputs.length,
           mentionsInserted,
+          orphansUpdated,
         },
         'derived-state: updated',
       );

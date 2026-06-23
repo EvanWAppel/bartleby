@@ -85,4 +85,51 @@ describe('CommentsRepository', () => {
     repo.delete('c1');
     expect(repo.findById('c1')).toBeUndefined();
   });
+
+  test('C-008: new rows start with is_orphaned=false', ({ db }) => {
+    seed(db);
+    const repo = createCommentsRepository(db);
+    const row = repo.insert({ ...baseComment, id: 'c1' });
+    expect(row.is_orphaned).toBe(false);
+  });
+
+  test('C-008: setOrphaned toggles the flag (true/false) and findById reflects it', ({ db }) => {
+    seed(db);
+    const repo = createCommentsRepository(db);
+    repo.insert({ ...baseComment, id: 'c1' });
+
+    repo.setOrphaned('c1', true);
+    expect(repo.findById('c1')?.is_orphaned).toBe(true);
+
+    repo.setOrphaned('c1', false);
+    expect(repo.findById('c1')?.is_orphaned).toBe(false);
+  });
+
+  test('C-008: listAllByNote returns rows regardless of resolved_at', ({ db }) => {
+    seed(db);
+    const repo = createCommentsRepository(db);
+    repo.insert({ ...baseComment, id: 'c1' });
+    repo.insert({ ...baseComment, id: 'c2', created_at: '2026-05-23T00:01:00.000Z' });
+    repo.resolve('c1', '2026-05-23T00:02:00.000Z');
+
+    expect(
+      repo
+        .listAllByNote('n1')
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual(['c1', 'c2']);
+  });
+
+  test('C-008: is_orphaned round-trips through listByNote as a boolean (not an int)', ({ db }) => {
+    seed(db);
+    const repo = createCommentsRepository(db);
+    repo.insert({ ...baseComment, id: 'c1' });
+    repo.setOrphaned('c1', true);
+
+    const rows = repo.listByNote('n1');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.is_orphaned).toBe(true);
+    // Specifically: not the SQLite int 1.
+    expect(typeof rows[0]?.is_orphaned).toBe('boolean');
+  });
 });
