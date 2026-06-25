@@ -43,6 +43,11 @@ export const ConfigSchema = z.object({
 
   // Workstream M — @mention email via Resend.
   RESEND_API_KEY: z.string().optional(),
+
+  // Q-003 / test-only: shrink the M-005 sliding-window batch from its
+  // 60s production default so e2e tests don't wait a minute. Production
+  // never sets this. Validated as a positive integer (ms).
+  MENTION_BATCH_WINDOW_MS: z.coerce.number().int().positive().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

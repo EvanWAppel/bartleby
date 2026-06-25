@@ -26,6 +26,8 @@ import { createRepositories } from './db/repositories/index.js';
 import { errorHandler } from './http/errors.js';
 import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
+import { createTestAdminApp } from './http/test-admin.js';
+import type { RecordingEmailTransport } from './mentions/email-sender.js';
 import { createCommentsApp } from './comments/routes.js';
 import { createExportApp } from './export/routes.js';
 import { createImportApp } from './import/routes.js';
@@ -52,6 +54,10 @@ export interface BartlebyHttpOptions {
   hocuspocus?: Hocuspocus;
   /** See `BuildHttpAppDeps.onMentionInserted`. */
   onMentionInserted?: (mentionId: string) => void;
+  /** Q-003: see `BuildHttpAppDeps.testEmailRecorder`. */
+  testEmailRecorder?: RecordingEmailTransport;
+  /** Q-003: see `BuildHttpAppDeps.flushMentionBatches`. */
+  flushMentionBatches?: () => Promise<void>;
 }
 
 export interface BuildHttpAppDeps {
@@ -68,6 +74,21 @@ export interface BuildHttpAppDeps {
    * no-op.
    */
   onMentionInserted?: (mentionId: string) => void;
+  /**
+   * Q-003: when supplied AND ALLOW_TEST_SIGN_IN=true, mounts a
+   * `GET /admin/test/sent-emails` route that returns the captured
+   * Resend payloads. Never wired in production.
+   */
+  testEmailRecorder?: RecordingEmailTransport;
+  /**
+   * Q-003: when supplied AND ALLOW_TEST_SIGN_IN=true, mounts a
+   * `POST /admin/test/flush-mention-batches` route that drains every
+   * pending mention-email batch immediately (bypassing the 60s sliding
+   * window). Tests call this right before asserting on
+   * /admin/test/sent-emails so they don't have to expect.poll for the
+   * batcher timer.
+   */
+  flushMentionBatches?: () => Promise<void>;
 }
 
 export function buildBartlebyHttpApp(
@@ -117,6 +138,18 @@ export function buildBartlebyHttpApp(
     deps.logger.warn(
       'ALLOW_TEST_SIGN_IN=true — /auth/dev/sign-in is mounted. Never enable this in production.',
     );
+    // Q-003: same env gate — mount the test admin endpoints if the
+    // caller wired the recording transport / flush hook.
+    if (deps.testEmailRecorder !== undefined || deps.flushMentionBatches !== undefined) {
+      const admin = createTestAdminApp({
+        recorder: deps.testEmailRecorder,
+        flushMentionBatches: deps.flushMentionBatches,
+      });
+      root.route('/', admin);
+      deps.logger.warn(
+        'ALLOW_TEST_SIGN_IN=true — /admin/test/* routes mounted (Q-003). Never enable in production.',
+      );
+    }
   }
 
   // S routes — gated by requireSession.
@@ -178,6 +211,8 @@ export function createBartlebyHttpServer(
     logger: options.logger,
     yjs,
     onMentionInserted: options.onMentionInserted,
+    testEmailRecorder: options.testEmailRecorder,
+    flushMentionBatches: options.flushMentionBatches,
   });
   return new Promise((resolve) => {
     const server: ServerType = serve(

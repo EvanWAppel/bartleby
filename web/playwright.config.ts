@@ -17,8 +17,14 @@ const bartlebyServerEnv = {
   GOOGLE_CLIENT_ID: 'test-client-id',
   GOOGLE_CLIENT_SECRET: 'test-client-secret',
   // Mounts POST /auth/dev/sign-in so tests can skip the OAuth dance.
-  // NEVER set in production.
+  // NEVER set in production. Also flips the mention-email pipeline to a
+  // recording transport (Q-003) so the e2e admin endpoints work.
   ALLOW_TEST_SIGN_IN: 'true',
+  // Q-003: collapse the M-005 sliding-window batcher from its 60s
+  // production default so the happy-path e2e doesn't have to wait a
+  // minute (or poll a flush endpoint) for the email to land. The
+  // production code path is unchanged — this is only an override.
+  MENTION_BATCH_WINDOW_MS: '100',
   LOG_LEVEL: 'warn',
 };
 
