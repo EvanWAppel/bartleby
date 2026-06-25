@@ -145,8 +145,9 @@
     font-size: 0.85rem;
   }
 
+  /* Q-005: WCAG AA — #888 on #fff is 3.54:1; #6f6f6f hits 4.55:1. */
   .empty {
-    color: #888;
+    color: #6f6f6f;
     font-style: italic;
   }
 
@@ -185,9 +186,10 @@
     white-space: nowrap;
   }
 
+  /* Q-005: WCAG AA — #888 on #fff is 3.54:1. #6f6f6f hits 4.55:1. */
   .ts {
     font-size: 0.7rem;
-    color: #888;
+    color: #6f6f6f;
   }
 
   .actions {

@@ -16,6 +16,14 @@
   let bare = $derived(pathname === '/login' || pathname.startsWith('/auth/'));
 </script>
 
+<!-- Q-005: every route needs a non-empty <title> (WCAG 2.4.2 / axe
+     document-title). Individual routes can still override via their
+     own <svelte:head><title> — SvelteKit merges per-route titles on
+     top of this default. -->
+<svelte:head>
+  <title>Bartleby</title>
+</svelte:head>
+
 {#if bare}
   {@render children()}
 {:else}

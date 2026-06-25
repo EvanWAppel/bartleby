@@ -337,8 +337,10 @@
     color: #c0392b;
   }
 
+  /* Q-005: WCAG AA color contrast — #888 on #fafafa is 3.39:1. The
+     sidebar background is #fafafa, so we darken to #6c6c6c (≈ 4.6:1). */
   .hint {
-    color: #888;
+    color: #6c6c6c;
     font-size: 0.85rem;
     margin: 0;
   }
@@ -394,9 +396,10 @@
     font-size: 0.85rem;
   }
 
+  /* Q-005: WCAG AA — darkened from #888 (3.39:1 on #fafafa) to #6c6c6c. */
   .trash-link {
     margin-left: auto;
-    color: #888;
+    color: #6c6c6c;
     text-decoration: none;
     font-size: 0.75rem;
   }
