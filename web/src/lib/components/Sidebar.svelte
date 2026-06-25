@@ -23,7 +23,7 @@
   import { goto } from '$app/navigation';
   import { NotesStore } from '$lib/state/notes-store.svelte';
   import { MentionsStore } from '$lib/state/mentions-store.svelte';
-  import { softDeleteNote, type NoteSummary } from '$lib/api/notes';
+  import { importNotes, softDeleteNote, type NoteSummary } from '$lib/api/notes';
   import ConfirmDialog from './ConfirmDialog.svelte';
 
   interface Props {
@@ -97,9 +97,116 @@
       trashing = false;
     }
   }
+
+  // W-025 drag-and-drop import. Two entry points:
+  //   1. Drop .md files onto the notes-list region (real user UX).
+  //   2. <input type="file"> for keyboard / a11y / Playwright (same code
+  //      path through importNotes → POST /notes/import).
+  // After upload, kick an immediate store.refresh() so the new rows
+  // appear without waiting for the 1s poll.
+  let dropActive: boolean = $state(false);
+  let importing: boolean = $state(false);
+  let importError: string | null = $state(null);
+  let fileInputEl: HTMLInputElement | null = $state(null);
+
+  // Attach change listener via addEventListener — the Svelte 5
+  // onchange-property pattern occasionally misses delegated events in
+  // our test harness (same quirk W-005 documents).
+  $effect(() => {
+    const el = fileInputEl;
+    if (el === null) return;
+    const handler = (e: Event): void => {
+      void onFilePicked(e);
+    };
+    el.addEventListener('change', handler);
+    // Hydration marker for the W-025 Playwright test. The listener is
+    // attached via $effect (not a Svelte 5 onchange property) because
+    // the latter occasionally missed events in our test harness — see
+    // the comment by the <input> below. The test gates setInputFiles
+    // behind this flag so it never fires before the listener exists.
+    (window as { __sidebarHydrated?: boolean }).__sidebarHydrated = true;
+    return () => {
+      el.removeEventListener('change', handler);
+    };
+  });
+
+  function hasMarkdownFiles(items: DataTransferItemList | null): boolean {
+    if (items === null) return false;
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i];
+      if (it !== undefined && it.kind === 'file') return true;
+    }
+    return false;
+  }
+
+  function onDragOver(e: DragEvent): void {
+    if (!hasMarkdownFiles(e.dataTransfer?.items ?? null)) return;
+    e.preventDefault();
+    dropActive = true;
+  }
+
+  function onDragLeave(e: DragEvent): void {
+    // Only clear when we actually leave the sidebar (not a child).
+    const current = e.currentTarget as HTMLElement | null;
+    const related = e.relatedTarget as Node | null;
+    if (current !== null && related !== null && current.contains(related)) return;
+    dropActive = false;
+  }
+
+  async function onDrop(e: DragEvent): Promise<void> {
+    e.preventDefault();
+    dropActive = false;
+    const files = filterMarkdown(e.dataTransfer?.files ?? null);
+    if (files.length === 0) return;
+    await runImport(files);
+  }
+
+  async function onFilePicked(e: Event): Promise<void> {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = filterMarkdown(input.files);
+    // Clear the input so the same file can be re-imported in a follow-up
+    // click without the browser short-circuiting on identical value.
+    input.value = '';
+    if (files.length === 0) return;
+    await runImport(files);
+  }
+
+  function filterMarkdown(list: FileList | null): File[] {
+    if (list === null) return [];
+    const out: File[] = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const f = list.item(i);
+      if (f !== null && /\.(md|markdown)$/i.test(f.name)) out.push(f);
+    }
+    return out;
+  }
+
+  async function runImport(files: File[]): Promise<void> {
+    if (importing) return;
+    importing = true;
+    importError = null;
+    try {
+      await importNotes(files);
+      // Immediate refresh so the new rows show up without waiting on
+      // the 1s poll.
+      await store.refresh();
+    } catch (err) {
+      importError = err instanceof Error ? err.message : String(err);
+    } finally {
+      importing = false;
+    }
+  }
 </script>
 
-<aside class="sidebar" data-testid="sidebar" aria-label="Notes navigation">
+<aside
+  class="sidebar"
+  data-testid="sidebar"
+  aria-label="Notes navigation"
+  class:drop-active={dropActive}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={(e) => void onDrop(e)}
+>
   <header class="brand">
     <h1>Bartleby</h1>
   </header>
@@ -107,6 +214,40 @@
   <form method="POST" action="/api/notes/new" data-testid="new-note-form">
     <button class="new" type="submit" data-testid="new-note-button"> + New note </button>
   </form>
+
+  <!-- W-025 import: hidden file input drives the same upload as a
+       drop. Real users get the drop UX; a11y / keyboard / Playwright
+       use the input (label opens the picker; setInputFiles drives the
+       same change-handler that a real selection would). We attach the
+       change listener via $effect/addEventListener rather than the
+       Svelte 5 onchange property because the test harness occasionally
+       missed the delegated-property handler in this codebase (the
+       same delegation quirk W-005 documents). -->
+  <label for="sidebar-import-input-el" class="import-label" data-testid="sidebar-import-label">
+    Import .md…
+  </label>
+  <input
+    id="sidebar-import-input-el"
+    type="file"
+    accept=".md,.markdown,text/markdown"
+    multiple
+    data-testid="sidebar-import-input"
+    bind:this={fileInputEl}
+    class="visually-hidden"
+  />
+  {#if importing}
+    <p class="hint" data-testid="sidebar-import-progress">Importing…</p>
+  {/if}
+  {#if importError !== null}
+    <p class="error" data-testid="sidebar-import-error" role="alert">
+      Import failed: {importError}
+    </p>
+  {/if}
+  {#if dropActive}
+    <p class="hint drop-hint" data-testid="sidebar-drop-hint" aria-hidden="true">
+      Drop .md files to import
+    </p>
+  {/if}
 
   {#if availableTags.length > 0}
     <div class="tagchips" data-testid="sidebar-tag-chips" role="group" aria-label="Filter by tag">
@@ -413,5 +554,49 @@
     height: 1.2rem;
     border-radius: 50%;
     flex-shrink: 0;
+  }
+
+  /* W-025 import label + drop visual feedback. The hidden input is
+     keyboard-focusable via the wrapping label (clicking the label
+     opens the file picker). Drop highlights the whole sidebar so the
+     drop target is unambiguous regardless of where the cursor lands. */
+  .import-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #555;
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    border-radius: 4px;
+  }
+  .import-label:hover {
+    background: #ececec;
+    color: #222;
+  }
+  /* Visually-hidden file input — still focusable + interactable so
+     Playwright setInputFiles works and keyboard users can tab to it.
+     The visible affordance is the <label> that points to its id. */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .sidebar.drop-active {
+    outline: 2px dashed #5b8def;
+    outline-offset: -4px;
+    background: #eef4ff;
+  }
+
+  .drop-hint {
+    color: #0b3e7f;
+    font-weight: 500;
   }
 </style>
