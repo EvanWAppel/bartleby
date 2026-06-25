@@ -36,22 +36,28 @@ test('typing after "@" filters the picker (W-013)', async ({ browser }) => {
 });
 
 test('clicking a candidate inserts a mention node (W-013 spec test)', async ({ browser }) => {
+  // Q-006: target charlie, not alice — alice gets signed in by
+  // editor-presence with a real displayName that persists in the
+  // server's in-memory users table for the rest of the worker, which
+  // breaks the "falls back to @email" assertion below when the suites
+  // run together. charlie is reserved (per playwright.config.ts) as
+  // an allowlist-only entry no other suite signs in.
   const { page, editor, close } = await openFreshEditor(browser, 'me-insert');
   await editor.focus();
-  await page.keyboard.type('@alice');
-  await page.getByTestId('mention-option-alice@example.com').click();
+  await page.keyboard.type('@charlie');
+  await page.getByTestId('mention-option-charlie@example.com').click();
   // Picker dismissed.
   await expect(page.getByTestId('mention-picker')).toBeHidden();
-  // Exactly one mention atom rendered (typed `@alice` was REPLACED, not
-  // appended to). Asserting count = 1 catches a "the typed text stayed
-  // in the doc alongside the new node" regression without needing a
-  // brittle textContent comparison (the chip's own label starts with
-  // `@alice…` so substring assertions fight themselves).
+  // Exactly one mention atom rendered (typed `@charlie` was REPLACED,
+  // not appended to). Asserting count = 1 catches a "the typed text
+  // stayed in the doc alongside the new node" regression without
+  // needing a brittle textContent comparison (the chip's own label
+  // starts with `@charlie…` so substring assertions fight themselves).
   const chip = editor.locator('span[data-mention]');
   await expect(chip).toHaveCount(1);
-  await expect(chip).toHaveAttribute('data-mention-email', 'alice@example.com');
-  // alice hasn't signed in, so the chip falls back to "@email" labeling.
-  await expect(chip).toHaveText('@alice@example.com');
+  await expect(chip).toHaveAttribute('data-mention-email', 'charlie@example.com');
+  // charlie hasn't signed in, so the chip falls back to "@email" labeling.
+  await expect(chip).toHaveText('@charlie@example.com');
   await close();
 });
 

@@ -9,6 +9,7 @@
 import { test, expect } from '@playwright/test';
 import { signIn } from './helpers/auth.js';
 import { createNote } from './helpers/notes.js';
+import { waitForEditorReady } from './helpers/editor.js';
 
 test('Cmd-K opens the overlay; typing surfaces hits; clicking navigates (W-020 spec test)', async ({
   browser,
@@ -21,6 +22,9 @@ test('Cmd-K opens the overlay; typing surfaces hits; clicking navigates (W-020 s
   const page = await ctx.newPage();
   await page.goto(`/n/${note.id}`);
   await page.getByTestId('editor-toolbar').waitFor({ state: 'visible' });
+  // Q-006: wait for Yjs sync before typing so the typed needle doesn't
+  // race a late inbound sync that wipes it.
+  await waitForEditorReady(page);
   const editor = page.getByTestId('editor').locator('.ProseMirror');
   await editor.click();
   const needle = `kestrel${stamp}`;
@@ -135,6 +139,7 @@ test('Cmd-K inside the editor does NOT open the search overlay (W-020 + W-009 co
   const page = await ctx.newPage();
   await page.goto(`/n/${note.id}`);
   await page.getByTestId('editor-toolbar').waitFor({ state: 'visible' });
+  await waitForEditorReady(page);
   const editor = page.getByTestId('editor').locator('.ProseMirror');
   await editor.click();
   // Type + select-all so the link popover has a selection to attach

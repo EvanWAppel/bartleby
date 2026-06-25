@@ -12,8 +12,14 @@ const bartlebyServerEnv = {
   SESSION_SECRET: 'test-only-session-secret-must-be-at-least-32-chars',
   // Includes a few extra non-signed-in entries so the W-013 mention
   // picker has both "signed-in" (test@example.com via the dev sign-in
-  // helper) and "allowlist-only" (alice/bob) options to display.
-  BARTLEBY_ALLOWED_EMAILS: 'test@example.com,alice@example.com,bob@example.com',
+  // helper) and "allowlist-only" (alice/bob/charlie) options to
+  // display. Q-006: charlie is reserved for tests that need a user
+  // GUARANTEED to be allowlist-only (no displayName). alice/bob are
+  // signed in by other suites (editor-presence sets a displayName),
+  // and that signup persists in the in-memory users table across
+  // workers, so a test that asserts "@<email> fallback labeling"
+  // cannot trust either of them.
+  BARTLEBY_ALLOWED_EMAILS: 'test@example.com,alice@example.com,bob@example.com,charlie@example.com',
   GOOGLE_CLIENT_ID: 'test-client-id',
   GOOGLE_CLIENT_SECRET: 'test-client-secret',
   // Mounts POST /auth/dev/sign-in so tests can skip the OAuth dance.
