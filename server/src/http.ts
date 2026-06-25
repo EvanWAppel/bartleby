@@ -28,6 +28,7 @@ import { requestLogger } from './http/logging.js';
 import { createDevAuthApp } from './auth/dev-routes.js';
 import { createCommentsApp } from './comments/routes.js';
 import { createExportApp } from './export/routes.js';
+import { createImportApp } from './import/routes.js';
 import { createMentionsApp } from './mentions/routes.js';
 import { createNotesApp } from './notes/routes.js';
 import { createSearchApp } from './notes/search-route.js';
@@ -134,6 +135,15 @@ export function buildBartlebyHttpApp(
   // I-005 export-all endpoint (single-note export sits under /notes/*
   // and is already gated above).
   root.use('/export/*', auth_gate);
+  // I-003 import endpoint. Mounted BEFORE the dynamic /notes/:id
+  // routes so the static `/notes/import` path wins. Requires the yjs
+  // accessor to seed initial Yjs state for each imported note;
+  // skipped entirely when no accessor is provided (tests that don't
+  // exercise Hocuspocus omit it).
+  if (deps.yjs !== undefined) {
+    const imp = createImportApp({ repos, yjs: deps.yjs });
+    root.route('/', imp);
+  }
   const notes = createNotesApp({ repos });
   root.route('/', notes);
   const search = createSearchApp({ repos });

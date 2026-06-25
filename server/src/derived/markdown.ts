@@ -1,7 +1,13 @@
-// Yjs YDoc -> markdown string. Used by the Hocuspocus onStoreDocument
-// hook (S-009) to keep `notes.markdown_export` in sync with the live
-// CRDT state so derived state (FTS5, tag extraction, backlink
-// extraction) can run on plain text.
+// Yjs YDoc -> markdown string. Dual purpose:
+//   - S-009: used by the Hocuspocus onStoreDocument hook to keep
+//     `notes.markdown_export` in sync with the live CRDT state so
+//     derived state (FTS5, tag extraction, backlink extraction) can
+//     run on plain text.
+//   - I-002 / I-004: this is also the canonical ProseMirror->Markdown
+//     serializer for the import/export round-trip. The import parser
+//     (src/import/parser.ts) is the inverse — every node it produces
+//     must serialize back through this module, and the round-trip
+//     tests in src/import/parser.test.ts pin that invariant.
 //
 // The schema must match what the web editor mounts (see ./schema.ts).
 // prosemirror-markdown's defaultMarkdownSerializer already handles

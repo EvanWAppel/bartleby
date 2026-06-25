@@ -194,6 +194,37 @@ export async function listBacklinks(
   }));
 }
 
+// W-025 / I-003: upload one or more `.md` files to the import
+// endpoint. The endpoint accepts multipart/form-data with files under
+// any field name; we use `files`. Returns the list of created notes
+// (id + title) so callers can navigate / refresh.
+export interface ImportedNote {
+  id: string;
+  title: string;
+}
+
+interface ImportResponse {
+  notes: ImportedNote[];
+}
+
+export async function importNotes(
+  files: File[],
+  opts: { fetch?: FetchLike } = {},
+): Promise<ImportedNote[]> {
+  const f = opts.fetch ?? fetch;
+  const fd = new FormData();
+  for (const file of files) {
+    fd.append('files', file, file.name);
+  }
+  const res = await f('/notes/import', {
+    method: 'POST',
+    body: fd,
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as ImportResponse;
+  return body.notes;
+}
+
 // W-027: fetch a single note as markdown (frontmatter + body). The
 // server's I-004 endpoint sets a `text/markdown` content type; the
 // "Copy as markdown" menu item dumps the result into the clipboard.
