@@ -759,6 +759,13 @@
     pointer-events: none;
   }
 
+  /* Q-005: presence cursor labels (W-014). y-prosemirror sets
+     background-color from the user's assigned color (auth/store.ts's
+     PRESENCE_PALETTE); some palette entries (e.g. #46f0f0 cyan,
+     #f032e6 magenta) are too light for #fff text to clear WCAG AA
+     contrast. A 1px black text-shadow halo gives the white text a
+     readable edge against any palette entry — light or dark — without
+     us having to compute per-color luminance at runtime. */
   .editor :global(.ProseMirror-yjs-cursor > div) {
     position: absolute;
     top: -1.1em;
@@ -770,8 +777,11 @@
     border-radius: 3px;
     white-space: nowrap;
     font-family: system-ui, sans-serif;
-    font-weight: 500;
+    font-weight: 600;
     user-select: none;
+    text-shadow:
+      0 0 2px rgba(0, 0, 0, 0.9),
+      0 1px 1px rgba(0, 0, 0, 0.85);
   }
 
   /* .ProseMirror-yjs-selection styling is delivered inline by

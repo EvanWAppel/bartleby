@@ -25,11 +25,13 @@
 
   .empty p {
     margin: 0.25rem 0;
-    color: #666;
+    color: #595959;
   }
 
+  /* Q-005: WCAG AA color contrast — #999 on #fff is 2.84:1, well
+     under the 4.5:1 floor. #6f6f6f hits 4.55:1 on a white background. */
   .empty .hint {
-    color: #999;
+    color: #6f6f6f;
     font-size: 0.85rem;
     margin-top: 1rem;
   }

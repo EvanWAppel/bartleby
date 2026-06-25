@@ -78,10 +78,11 @@
     font-family: serif;
   }
 
+  /* Q-005: WCAG AA — #888 on #fff is 3.54:1. #6f6f6f hits 4.55:1. */
   .note {
     margin-top: 2rem;
     font-size: 0.85rem;
-    color: #888;
+    color: #6f6f6f;
     max-width: 24rem;
     text-align: center;
   }

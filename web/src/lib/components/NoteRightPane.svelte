@@ -151,8 +151,11 @@
     color: #222;
   }
 
+  /* Q-005: WCAG AA — #5b8def on #fafafa is 3.09:1. Darken text to
+     #3261b8 (≈ 5.4:1) while keeping the border accent at the brand
+     blue (decorative, no contrast requirement at 3:1 for borders). */
   .tab.active {
-    color: #5b8def;
+    color: #3261b8;
     border-bottom-color: #5b8def;
     font-weight: 500;
   }

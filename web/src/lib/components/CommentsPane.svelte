@@ -431,8 +431,9 @@
     margin: 0;
     font-size: 0.85rem;
   }
+  /* Q-005: WCAG AA — #888 on #fafafa is 3.39:1. Darken to #6c6c6c. */
   .hint {
-    color: #888;
+    color: #6c6c6c;
     font-style: italic;
   }
   .errortext {

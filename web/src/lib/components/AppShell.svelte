@@ -63,8 +63,9 @@
     padding: 1rem;
   }
 
+  /* Q-005: WCAG AA — #888 on #fafafa is 3.39:1. Darken to #6c6c6c (≈ 4.6:1). */
   .hint {
-    color: #888;
+    color: #6c6c6c;
     font-size: 0.85rem;
   }
 
