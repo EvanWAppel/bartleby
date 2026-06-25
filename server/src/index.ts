@@ -3,11 +3,18 @@
 //   - HTTP server with the auth routes (Workstream A)
 // after validating env config and running pending migrations (Workstream D).
 
+import { Resend } from 'resend';
 import { loadConfig } from './config.js';
 import { openDatabase } from './db/open.js';
 import { createRepositories } from './db/repositories/index.js';
 import { createDerivedStateHook } from './derived/hook.js';
 import { createLogger } from './logger.js';
+import {
+  createNoopEmailTransport,
+  createResendEmailTransport,
+  type EmailTransport,
+} from './mentions/email-sender.js';
+import { createMentionEmailPipeline } from './mentions/pipeline.js';
 import { runMigrations } from './migrate.js';
 import { createTrashPurger } from './notes/purge.js';
 import { createBartlebyServer } from './server.js';
@@ -48,11 +55,52 @@ async function main(): Promise<void> {
   await runMigrations({ db, logger });
   const repos = createRepositories(db);
 
+  // 4a. M-005/M-006/M-007 mention-email pipeline. Resend is the
+  //     provider. When RESEND_API_KEY is unset we wire a no-op
+  //     transport that logs every "send" — keeps the rest of the
+  //     pipeline live in local dev / CI without making outbound HTTP.
+  //     PUBLIC_BASE_URL is required for the deep links in the email
+  //     body; without it we also fall back to no-op (template would
+  //     produce invalid URLs).
+  let mentionPipeline: ReturnType<typeof createMentionEmailPipeline> | undefined;
+  if (config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0) {
+    let transport: EmailTransport;
+    if (config.RESEND_API_KEY !== undefined && config.RESEND_API_KEY.length > 0) {
+      transport = createResendEmailTransport(new Resend(config.RESEND_API_KEY));
+      logger.info('mention-email: Resend transport active');
+    } else {
+      transport = createNoopEmailTransport(logger);
+      logger.warn(
+        'mention-email: RESEND_API_KEY unset — using no-op transport (emails will be logged, not sent)',
+      );
+    }
+    mentionPipeline = createMentionEmailPipeline({
+      repos,
+      logger,
+      transport,
+      publicBaseUrl: config.PUBLIC_BASE_URL,
+      // Resend's verified-domain default — operators override via
+      // BARTLEBY_EMAIL_FROM if they need a vanity address. Keeping the
+      // env var out of config.ts for now so M-001..M-004's already-
+      // shipped config schema stays untouched; we only read it here.
+      fromAddress: process.env.BARTLEBY_EMAIL_FROM ?? 'Bartleby <onboarding@resend.dev>',
+    });
+  } else {
+    logger.warn(
+      'mention-email: PUBLIC_BASE_URL unset — mention emails disabled (deep links would be invalid)',
+    );
+  }
+
   // 4. Boot the WS server with the derived-state hook attached. The
   //    hook fires on Hocuspocus's debounced WAL flush and keeps
   //    notes.markdown_export + tags + backlinks in sync with the live
   //    CRDT — see src/derived/hook.ts.
-  const derivedHook = createDerivedStateHook({ repos, logger });
+  const derivedHook = createDerivedStateHook({
+    repos,
+    logger,
+    onMentionInserted:
+      mentionPipeline !== undefined ? (id) => mentionPipeline!.enqueueByMentionId(id) : undefined,
+  });
   const ws = await createBartlebyServer({
     port: config.PORT,
     databasePath: config.BARTLEBY_DB_PATH,
@@ -93,6 +141,8 @@ async function main(): Promise<void> {
       db,
       logger,
       hocuspocus: ws.hocuspocus,
+      onMentionInserted:
+        mentionPipeline !== undefined ? (id) => mentionPipeline!.enqueueByMentionId(id) : undefined,
     });
     logger.info(
       {
@@ -112,6 +162,19 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down');
     purger.stop();
     snapshotScheduler.stop();
+    // M-005: drain in-flight mention batches BEFORE we tear down the
+    // HTTP server / DB so the email sender can still mark
+    // email_sent_at on the rows it fires.
+    if (mentionPipeline !== undefined) {
+      try {
+        await mentionPipeline.flushAll();
+      } catch (err) {
+        logger.error(
+          { error: err instanceof Error ? err.message : String(err) },
+          'mention-email: flushAll failed during shutdown',
+        );
+      }
+    }
     if (http !== undefined) {
       await http.close();
     }

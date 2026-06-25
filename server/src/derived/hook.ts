@@ -30,6 +30,13 @@ export interface DerivedStateHookDeps {
   repos: Repositories;
   logger: Logger;
   now?: () => Date;
+  /**
+   * M-005 hook: invoked once per newly-inserted mention row id. Wired
+   * to the email pipeline's `enqueueByMentionId` in production; tests
+   * usually omit it (and the hook becomes a no-op for the mention
+   * email path). Fire-and-forget by contract — callers MUST NOT await.
+   */
+  onMentionInserted?: (mentionId: string) => void;
 }
 
 export interface StoreDocumentPayload {
@@ -44,6 +51,7 @@ export interface DerivedStateHook {
 export function createDerivedStateHook(deps: DerivedStateHookDeps): DerivedStateHook {
   const { repos, logger } = deps;
   const now = deps.now ?? (() => new Date());
+  const onMentionInserted = deps.onMentionInserted;
 
   const titleResolver: TitleResolver = (title) => {
     const matches = repos.noteTitlesHistory.resolveTitle(title);
@@ -109,8 +117,9 @@ export function createDerivedStateHook(deps: DerivedStateHookDeps): DerivedState
         const mentioningId = row.created_by;
         if (user.id === mentioningId) continue; // don't notify self
         if (existingUserIds.has(user.id)) continue;
+        const insertedId = randomUUID();
         repos.mentions.insert({
-          id: randomUUID(),
+          id: insertedId,
           note_id: documentName,
           mentioned_user_id: user.id,
           mentioning_user_id: mentioningId,
@@ -119,6 +128,22 @@ export function createDerivedStateHook(deps: DerivedStateHookDeps): DerivedState
         });
         existingUserIds.add(user.id);
         mentionsInserted += 1;
+        // M-005: hand the new row off to the email batcher. Strictly
+        // fire-and-forget so a slow / failing email path can never
+        // block the derived-state hook (which is itself in the
+        // Hocuspocus save path). The pipeline catches its own errors
+        // and the row's email_sent_at stays NULL on failure so a
+        // future scan-and-resend job can recover.
+        if (onMentionInserted !== undefined) {
+          try {
+            onMentionInserted(insertedId);
+          } catch (err) {
+            logger.error(
+              { mentionId: insertedId, error: err instanceof Error ? err.message : String(err) },
+              'derived-state: onMentionInserted hook threw — continuing',
+            );
+          }
+        }
       }
 
       // C-008: comment orphan recompute. Walk every comment on this

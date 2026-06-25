@@ -43,6 +43,13 @@ export interface CommentsAppDeps {
    * the client-supplied value.
    */
   yjs?: YjsDocAccessor;
+  /**
+   * M-005: invoked once per freshly-inserted mention row id. Wired to
+   * the email pipeline's `enqueueByMentionId` in production. Strictly
+   * fire-and-forget — `extractCommentMentions` MUST NOT block the
+   * comment-create response on the email path.
+   */
+  onMentionInserted?: (mentionId: string) => void;
 }
 
 async function parseJsonBody(c: CommentsContext): Promise<unknown> {
@@ -97,14 +104,26 @@ function extractCommentMentions(deps: CommentsAppDeps, comment: CommentRow): voi
     const user = repos.users.findByEmail(email);
     if (user === undefined) continue;
     if (user.id === comment.author_id) continue;
+    const mentionId = randomUUID();
     repos.mentions.insert({
-      id: randomUUID(),
+      id: mentionId,
       note_id: comment.note_id,
       mentioned_user_id: user.id,
       mentioning_user_id: comment.author_id,
       source,
       created_at: at,
     });
+    // M-005: queue an email send. Fire-and-forget so the comment POST
+    // response never waits on Resend.
+    if (deps.onMentionInserted !== undefined) {
+      try {
+        deps.onMentionInserted(mentionId);
+      } catch {
+        // The pipeline catches its own errors; this is belt-and-
+        // suspenders for a synchronous throw. Don't let it bubble out
+        // of the route handler.
+      }
+    }
   }
 }
 

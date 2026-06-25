@@ -202,6 +202,35 @@ describe('createDerivedStateHook (S-009)', () => {
     expect(repos.comments.findById('c-bad')?.is_orphaned).toBe(true);
   });
 
+  test('M-005: onMentionInserted fires once per net-new mention row', async ({ db }) => {
+    seedNote(db, 'note-mention');
+    const repos = createRepositories(db);
+    // Seed a recipient so the mention extractor resolves the email.
+    repos.users.insert({
+      id: 'u-bob',
+      email: 'bob@example.com',
+      display_name: 'Bob',
+      color: '#bbb',
+      created_at: NOW.toISOString(),
+    });
+    const fired: string[] = [];
+    const hook = createDerivedStateHook({
+      repos,
+      logger,
+      now: () => NOW,
+      onMentionInserted: (id) => fired.push(id),
+    });
+
+    const ydoc = buildYDocWithParagraph('hey @bob@example.com check this out');
+    await hook.onStoreDocument({ document: ydoc, documentName: 'note-mention' });
+    expect(fired).toHaveLength(1);
+
+    // Re-running with the same markdown is idempotent — no new row,
+    // no new callback.
+    await hook.onStoreDocument({ document: ydoc, documentName: 'note-mention' });
+    expect(fired).toHaveLength(1);
+  });
+
   test('skips trashed notes (do not derive state for soft-deleted docs)', async ({ db }) => {
     seedNote(db, 'doomed');
     const repos = createRepositories(db);
