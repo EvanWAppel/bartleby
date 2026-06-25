@@ -254,7 +254,7 @@ Targets a single small VPS. Depends on the server being launchable as a single N
 - [x] **Q-001** End-to-end test: two browser sessions on the same note, simultaneous typing, no data loss. (test: Playwright with two contexts.)
 - [ ] **Q-002** End-to-end test: web + TUI on the same note, simultaneous typing, no data loss. (test: pytest spinning up Playwright via subprocess + a TUI client.)
 - [ ] **Q-003** End-to-end test: full sign-in → create note → comment → @mention → email-sent assertion (mocked Resend). (test: scripted.)
-- [ ] **Q-004** Load: simulate 5 concurrent users editing 5 notes for 10 min; assert no errors, snapshot growth bounded, memory stable. (test: scripted; thresholds documented.)
+- [x] **Q-004** Load: simulate 5 concurrent users editing 5 notes for 10 min; assert no errors, snapshot growth bounded, memory stable. (test: scripted; thresholds documented.)
 - [x] **Q-005** Accessibility pass on web: keyboard-only navigation works; aria-labels on icon buttons; color contrast on presence cursors readable in light + dark. (test: axe scan on key routes.)
 
 ---
