@@ -49,6 +49,8 @@ export interface BartlebyHttpOptions {
   logger: Logger;
   /** Optional: when present, mounts the C-002..C-006 snapshot routes. */
   hocuspocus?: Hocuspocus;
+  /** See `BuildHttpAppDeps.onMentionInserted`. */
+  onMentionInserted?: (mentionId: string) => void;
 }
 
 export interface BuildHttpAppDeps {
@@ -58,6 +60,13 @@ export interface BuildHttpAppDeps {
    * Tests that don't exercise snapshots can omit this; the snapshot
    * routes get mounted only when an accessor is supplied. */
   yjs?: YjsDocAccessor;
+  /**
+   * M-005: fire-and-forget callback invoked when a new mention row is
+   * inserted by the comments route. Wired to the email pipeline in
+   * production (index.ts); tests omit it and the email path becomes a
+   * no-op.
+   */
+  onMentionInserted?: (mentionId: string) => void;
 }
 
 export function buildBartlebyHttpApp(
@@ -131,7 +140,11 @@ export function buildBartlebyHttpApp(
   root.route('/', search);
   const users = createUsersApp({ allowlist, store });
   root.route('/', users);
-  const comments = createCommentsApp({ repos, yjs: deps.yjs });
+  const comments = createCommentsApp({
+    repos,
+    yjs: deps.yjs,
+    onMentionInserted: deps.onMentionInserted,
+  });
   root.route('/', comments);
   const mentions = createMentionsApp({ repos });
   root.route('/', mentions);
@@ -154,6 +167,7 @@ export function createBartlebyHttpServer(
     db: options.db,
     logger: options.logger,
     yjs,
+    onMentionInserted: options.onMentionInserted,
   });
   return new Promise((resolve) => {
     const server: ServerType = serve(
