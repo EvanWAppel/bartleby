@@ -120,6 +120,21 @@
   }
 
   function onWindowKeydown(e: KeyboardEvent): void {
+    // Q-006: handle Escape at the window level when the overlay is
+    // open. The panel + input each have an onkeydown handler, but
+    // openOverlay() defers focusing the input until a setTimeout(0)
+    // after tick() — so an Escape press that lands BEFORE focus has
+    // moved to the input would otherwise be eaten by document.body and
+    // leave the overlay stuck open. (Reproduces ~10% of the time on a
+    // busy machine.) Listening at the window level for Escape closes
+    // that race without changing the focus-deferral logic (which the
+    // existing comment explains is itself a fix for a stray-event race
+    // at open time).
+    if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      close();
+      return;
+    }
     const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
     if (!isModK) return;
     // Editor's Mod-K (link popover, W-009) lives in ProseMirror's

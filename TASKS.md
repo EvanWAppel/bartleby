@@ -256,7 +256,7 @@ Targets a single small VPS. Depends on the server being launchable as a single N
 - [ ] **Q-003** End-to-end test: full sign-in → create note → comment → @mention → email-sent assertion (mocked Resend). (test: scripted.)
 - [x] **Q-004** Load: simulate 5 concurrent users editing 5 notes for 10 min; assert no errors, snapshot growth bounded, memory stable. (test: scripted; thresholds documented.)
 - [x] **Q-005** Accessibility pass on web: keyboard-only navigation works; aria-labels on icon buttons; color contrast on presence cursors readable in light + dark. (test: axe scan on key routes.)
-- [ ] **Q-006** Stabilize pre-existing flaky Playwright tests: `editor-toolbar` strike-through assertion, `editor-shortcuts` Mod-Shift-X path, `editor-mentions` picker-click interaction, `search-overlay` Escape dismissal. Each reproduces intermittently on `main` independent of any recent PR. (test: 20x repeat-each green for each spec; document root cause per spec in the commit message.)
+- [x] **Q-006** Stabilize pre-existing flaky Playwright tests: `editor-toolbar` strike-through assertion, `editor-shortcuts` Mod-Shift-X path, `editor-mentions` picker-click interaction, `search-overlay` Escape dismissal. Each reproduces intermittently on `main` independent of any recent PR. (test: 20x repeat-each green for each spec; document root cause per spec in the commit message.)
 
 ---
 

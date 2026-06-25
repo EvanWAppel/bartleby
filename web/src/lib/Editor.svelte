@@ -36,6 +36,16 @@
 
   let editorEl: HTMLDivElement | null = $state(null);
   let actions: ToolbarActions | null = $state(null);
+  // Q-006: explicit readiness flag the editor surfaces on the DOM via
+  // `data-editor-ready`. Tests (and any caller that needs to know the
+  // editor is truly ready to receive input) wait on this attribute.
+  // It only flips to true once BOTH (a) the EditorView is mounted with
+  // the toolbar-actions bag wired up AND (b) the HocuspocusProvider has
+  // finished its initial sync handshake with the server. Typing before
+  // (b) is dangerous: the local edit can race the inbound sync state
+  // and either get clobbered by a remote replace or land in a CRDT
+  // state that y-prosemirror re-renders out from under us.
+  let ready: boolean = $state(false);
 
   // W-012 backlink picker. The trigger plugin reports an active
   // `[[<query>` state via its onChange callback; we mirror that into
@@ -166,6 +176,21 @@
       url: serverUrl,
       name: resolvedRoom,
       document: ydoc,
+    });
+
+    // Q-006: surface provider sync as the second half of the editor
+    // readiness signal (see `ready` declaration above). The provider
+    // can already be synced by the time we attach (synchronous local
+    // provider in tests, or a very fast WebSocket round-trip), so we
+    // initialize from the live flag AND register a listener for the
+    // event in case sync hasn't happened yet.
+    let providerSynced = provider.synced;
+    function maybeMarkReady(): void {
+      if (providerSynced && actions !== null) ready = true;
+    }
+    provider.on('synced', () => {
+      providerSynced = true;
+      maybeMarkReady();
     });
 
     // W-014 / C-001: publish { name, color } via the provider's Yjs
@@ -415,6 +440,10 @@
       toggleCodeBlock: () => run(setBlockType(nodeTypes.code_block)),
     };
 
+    // Q-006: with the actions bag wired up, the editor is half-ready —
+    // re-evaluate the combined readiness flag now that `actions` is set.
+    maybeMarkReady();
+
     onLinkApply = (href) => {
       if (savedSelection !== null) {
         const { from, to } = savedSelection;
@@ -657,6 +686,7 @@
   <div
     bind:this={editorEl}
     data-testid="editor"
+    data-editor-ready={ready ? 'true' : 'false'}
     class="editor"
     role="textbox"
     aria-label="Note body"
