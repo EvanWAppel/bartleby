@@ -18,6 +18,10 @@ const proxiedPrefixes = [
   '/comments',
   '/mentions',
   '/export',
+  // Q-003: test-only admin routes (only mounted on the bartleby server
+  // when ALLOW_TEST_SIGN_IN=true). Proxied here so Playwright can hit
+  // them through the SvelteKit dev server.
+  '/admin',
 ];
 
 const proxy = Object.fromEntries(

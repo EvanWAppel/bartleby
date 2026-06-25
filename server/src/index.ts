@@ -11,8 +11,10 @@ import { createDerivedStateHook } from './derived/hook.js';
 import { createLogger } from './logger.js';
 import {
   createNoopEmailTransport,
+  createRecordingEmailTransport,
   createResendEmailTransport,
   type EmailTransport,
+  type RecordingEmailTransport,
 } from './mentions/email-sender.js';
 import { createMentionEmailPipeline } from './mentions/pipeline.js';
 import { runMigrations } from './migrate.js';
@@ -63,9 +65,19 @@ async function main(): Promise<void> {
   //     body; without it we also fall back to no-op (template would
   //     produce invalid URLs).
   let mentionPipeline: ReturnType<typeof createMentionEmailPipeline> | undefined;
+  // Q-003: when ALLOW_TEST_SIGN_IN is on, swap in a recording transport
+  // so the test admin route can read the captured payloads. The handle
+  // is also exposed to the HTTP layer below.
+  let recordingTransport: RecordingEmailTransport | undefined;
   if (config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0) {
     let transport: EmailTransport;
-    if (config.RESEND_API_KEY !== undefined && config.RESEND_API_KEY.length > 0) {
+    if (process.env.ALLOW_TEST_SIGN_IN === 'true') {
+      recordingTransport = createRecordingEmailTransport(logger);
+      transport = recordingTransport;
+      logger.warn(
+        'mention-email: ALLOW_TEST_SIGN_IN=true — using recording transport (Q-003 test mode)',
+      );
+    } else if (config.RESEND_API_KEY !== undefined && config.RESEND_API_KEY.length > 0) {
       transport = createResendEmailTransport(new Resend(config.RESEND_API_KEY));
       logger.info('mention-email: Resend transport active');
     } else {
@@ -84,6 +96,10 @@ async function main(): Promise<void> {
       // env var out of config.ts for now so M-001..M-004's already-
       // shipped config schema stays untouched; we only read it here.
       fromAddress: process.env.BARTLEBY_EMAIL_FROM ?? 'Bartleby <onboarding@resend.dev>',
+      // Q-003: env override (validated as positive int by config.ts) so
+      // e2e tests can collapse the 60s batching window without touching
+      // production semantics.
+      windowMs: config.MENTION_BATCH_WINDOW_MS,
     });
   } else {
     logger.warn(
@@ -143,6 +159,12 @@ async function main(): Promise<void> {
       hocuspocus: ws.hocuspocus,
       onMentionInserted:
         mentionPipeline !== undefined ? (id) => mentionPipeline!.enqueueByMentionId(id) : undefined,
+      // Q-003: hand the test admin route (only mounted when
+      // ALLOW_TEST_SIGN_IN=true) the recording transport + a way to
+      // force-drain the batcher between assertions.
+      testEmailRecorder: recordingTransport,
+      flushMentionBatches:
+        mentionPipeline !== undefined ? () => mentionPipeline!.flushAll() : undefined,
     });
     logger.info(
       {

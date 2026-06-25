@@ -227,3 +227,37 @@ export function createNoopEmailTransport(logger: Logger): EmailTransport {
     },
   };
 }
+
+/** Q-003 / test-only: in-memory recording transport. Each `send` appends
+ * the payload to an internal log; the log is exposed via a test admin
+ * route (gated on ALLOW_TEST_SIGN_IN=true) so an e2e test can assert
+ * the email path actually fired without going out over HTTP. */
+export interface RecordingEmailTransport extends EmailTransport {
+  /** Snapshot of every payload sent (oldest first). */
+  recorded(): EmailPayload[];
+  /** Drop the recorded log. Useful between test cases. */
+  reset(): void;
+}
+
+export function createRecordingEmailTransport(logger: Logger): RecordingEmailTransport {
+  const log: EmailPayload[] = [];
+  let counter = 0;
+  return {
+    async send(payload) {
+      log.push(payload);
+      counter += 1;
+      logger.debug(
+        { to: payload.to, subject: payload.subject, count: counter },
+        'mention-email: recording transport captured send',
+      );
+      return { id: `recording-${counter}` };
+    },
+    recorded() {
+      return [...log];
+    },
+    reset() {
+      log.length = 0;
+      counter = 0;
+    },
+  };
+}
