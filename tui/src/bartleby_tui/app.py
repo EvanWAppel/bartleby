@@ -39,7 +39,7 @@ from textual.widgets import Footer, Header, Static, TextArea
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
-from bartleby_tui.status_bar import StatusBar
+from bartleby_tui.renderer import render_document, ydoc_to_blocks
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +61,28 @@ class BodyEditor(TextArea):
     BodyEditor {
         height: 1fr;
         padding: 1 2;
+    }
+    """
+
+
+class DocumentRenderer(Static):
+    """T-004: read-only renderer for the ProseMirror-style document.
+
+    Subscribes (via the app) to the YDoc and repaints with the latest
+    ``render_document(ydoc_to_blocks(...))`` output on every change.
+
+    The editable ``BodyEditor`` (plain text on the ``body`` YText) still
+    drives writes for now (T-005 owns the editing primitives that mutate
+    the ``prosemirror`` XmlFragment). This widget exists so the rich
+    document content already arriving via collab from web peers is
+    visible in the TUI.
+    """
+
+    DEFAULT_CSS = """
+    DocumentRenderer {
+        height: auto;
+        padding: 1 2;
+        border-top: solid $primary;
     }
     """
 
@@ -129,7 +151,7 @@ class BartlebyApp(App[None]):
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
-        self._status_bar: StatusBar | None = None
+        self._renderer_view: DocumentRenderer | None = None
         # Snapshot of the last text we pushed into the TextArea. We use it
         # to suppress echoes when the YDoc->TextArea sync emits a Changed.
         self._last_applied_text: str = ""
@@ -160,9 +182,11 @@ class BartlebyApp(App[None]):
                 view = BodyEditor(text="", id="body", show_line_numbers=False)
                 self._body_view = view
                 yield view
-        bar = StatusBar()
-        self._status_bar = bar
-        yield bar
+                renderer = DocumentRenderer("", id="document")
+                self._renderer_view = renderer
+                yield renderer
+        # T-018 will wire connection state + presence into this bar.
+        yield Static("", id="status-bar")
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -199,19 +223,7 @@ class BartlebyApp(App[None]):
         await self.connection.__aenter__()
         # Initial paint from server state if any arrived during sync.
         self._refresh_from_doc()
-        # Seed the status bar with the current snapshot. The transition-only
-        # callbacks above fire on *future* changes; on_mount's "we just
-        # connected" event needs an explicit push.
-        if self._status_bar is not None:
-            self._status_bar.set_connected(self.connection.is_connected)
-            self._status_bar.set_peers(self.connection.peer_awareness)
-        # T-024 is in flight on a parallel branch; once it wires per-user
-        # colors into /auth/me we can publish a richer local user state.
-        # For T-018 we only need *something* keyed under "user" so peers'
-        # status bars show "you" symmetrically.
-        self.connection.set_local_awareness({"user": {"name": "you"}})
-        if self._status_bar is not None:
-            self._status_bar.set_self({"user": {"name": "you"}})
+        self._refresh_renderer()
         if self._body_view is not None:
             self._body_view.focus()
 
@@ -255,6 +267,7 @@ class BartlebyApp(App[None]):
         # Listener is dispatched via loop.call_soon by the connection, so
         # we're already outside the y-py callback context here.
         self._refresh_from_doc()
+        self._refresh_renderer()
 
     def _refresh_from_doc(self) -> None:
         """Pull the YDoc body into the TextArea only when safe to do so.
@@ -280,6 +293,18 @@ class BartlebyApp(App[None]):
             return
         self._last_applied_text = text
         self._body_view.load_text(text)
+
+    def _refresh_renderer(self) -> None:
+        """Repaint the DocumentRenderer pane from the YDoc's prosemirror fragment.
+
+        Safe to call any time after on_mount — it no-ops if the widget
+        hasn't been composed yet. Any failure walking the fragment
+        propagates per agents.md ("do not hide or wrap errors").
+        """
+        if self._renderer_view is None:
+            return
+        blocks = ydoc_to_blocks(self._doc)
+        self._renderer_view.update(render_document(blocks))
 
     # ------------------------------------------------------------------ view -> YDoc
 
