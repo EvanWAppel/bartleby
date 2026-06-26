@@ -37,11 +37,16 @@ from textual.widgets import Footer, Header, Static, TextArea
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
+from bartleby_tui.notes_api import fetch_notes
+from bartleby_tui.notes_list import NotesList
 
 log = logging.getLogger(__name__)
 
 DEFAULT_DOC_NAME = "vertical-slice"
 DEFAULT_SERVER_URL = "ws://127.0.0.1:1234"
+# Spec target: list updates within 1s of a remote change. Poll at 1s so
+# steady-state lag is bounded by the spec. Tests inject a smaller value.
+DEFAULT_NOTES_POLL_SECONDS = 1.0
 
 
 class BodyEditor(TextArea):
@@ -112,6 +117,7 @@ class BartlebyApp(App[None]):
         http_base_url: str | None = None,
         token_store: TokenStore | None = None,
         auth_output: TextIO | None = None,
+        notes_poll_seconds: float = DEFAULT_NOTES_POLL_SECONDS,
     ) -> None:
         super().__init__()
         self._server_url = server_url
@@ -128,6 +134,8 @@ class BartlebyApp(App[None]):
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
+        self._notes_view: NotesList | None = None
+        self._notes_timer = None
         # Snapshot of the last text we pushed into the TextArea. We use it
         # to suppress echoes when the YDoc->TextArea sync emits a Changed.
         self._last_applied_text: str = ""
@@ -147,8 +155,13 @@ class BartlebyApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main-row"):
-            # T-007 will replace this Static with a live note list widget.
-            yield Static("Notes", id="notes-pane")
+            # T-007: live notes list, polled from `GET /notes` once the
+            # http_base_url is configured. When no http_base_url is set
+            # (layout-only tests / Phase 0 fallback) the widget renders
+            # an empty list and stays inert.
+            notes_view = NotesList(id="notes-pane")
+            self._notes_view = notes_view
+            yield notes_view
             with Vertical(id="editor-pane"):
                 view = BodyEditor(text="", id="body", show_line_numbers=False)
                 self._body_view = view
@@ -192,10 +205,42 @@ class BartlebyApp(App[None]):
         if self._body_view is not None:
             self._body_view.focus()
 
+        # T-007: kick off the notes-list polling loop. We only poll when an
+        # http_base_url is configured because the REST endpoint lives on the
+        # HTTP server, not Hocuspocus. set_interval fires `interval` seconds
+        # *after* mount; do one immediate fetch so the list isn't blank.
+        if self._http_base_url is not None:
+            await self._refresh_notes()
+            self._notes_timer = self.set_interval(
+                self._notes_poll_seconds,
+                self._refresh_notes,
+                name="notes-poll",
+            )
+
     async def on_unmount(self) -> None:
+        if self._notes_timer is not None:
+            self._notes_timer.stop()
+            self._notes_timer = None
         if self.connection is not None:
             await self.connection.__aexit__(None, None, None)
             self.connection = None
+
+    async def _refresh_notes(self) -> None:
+        """Fetch the live notes list and push it into the widget.
+
+        Per agents.md: errors are not silently swallowed. We log + re-raise
+        unless the app is shutting down. Letting an exception escape the
+        timer callback would otherwise just be logged by Textual; logging
+        here gives operators a clearer breadcrumb.
+        """
+        if self._http_base_url is None or self._notes_view is None:
+            return
+        try:
+            notes = await fetch_notes(self._http_base_url, self._access_token)
+        except Exception:
+            log.exception("notes-poll: fetch_notes failed")
+            raise
+        self._notes_view.set_notes(notes)
 
     # ------------------------------------------------------------------ YDoc -> view
 
