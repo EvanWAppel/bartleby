@@ -155,7 +155,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
   - `[[` → backlink picker overlay.
   - `@` → mentions picker overlay.
   (test: each keybind covered by a pilot test.)
-- [ ] **T-007** Notes list pane: live list of notes (title, tags, updated_at). Live-updates via SSE or WebSocket on the REST side. (test: another client creating a note causes the list to update within 1s.)
+- [x] **T-007** Notes list pane: live list of notes (title, tags, updated_at). Live-updates via SSE or WebSocket on the REST side. (test: another client creating a note causes the list to update within 1s.)
 - [ ] **T-008** Search (`/`): inline search input filters notes list via `GET /search`. (test: typing filters; Enter opens top result.)
 - [ ] **T-009** Tag filter: `t` opens a tag picker; selected tags filter the list. (test: select tag → list reduced.)
 - [ ] **T-010** Note CRUD: `n` new, `r` rename (modal), `d` delete (confirm), `R` restore from trash. (test: each action.)
@@ -172,7 +172,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [ ] **T-021** `:` command palette: fuzzy over commands and note titles. (test: types `:export`, runs export.)
 - [ ] **T-022** Export single note (`:export`) writes `.md` to a chosen path. (test: file exists with expected content.)
 - [ ] **T-023** Export all (`:export-all`) writes zip to a chosen path. (test: zip contains expected files.)
-- [ ] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
+- [x] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
 - [ ] **T-025** Pygments-based syntax highlighting for code blocks. (test: a Python code block renders with expected token styles.)
 
 ---

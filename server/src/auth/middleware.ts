@@ -1,4 +1,7 @@
-// Session-gate middleware for hono (A-003). Reads bartleby_session cookie,
+// Session-gate middleware for hono (A-003). Accepts either:
+//   1. A `bartleby_session` cookie (web flow), or
+//   2. An `Authorization: Bearer <jwt>` header (TUI / device-code flow, T-024).
+// Both carry the same JWT shape (signed via SESSION_SECRET). The middleware
 // verifies the JWT, checks the jti denylist, loads the user, and attaches
 // it to the context. 401 on any failure path.
 
@@ -22,13 +25,29 @@ export interface RequireSessionDeps {
   store: SessionStore;
 }
 
+const BEARER_PREFIX = 'Bearer ';
+
+function extractBearerToken(header: string | undefined): string | null {
+  if (header === undefined || header.length === 0) return null;
+  if (!header.startsWith(BEARER_PREFIX)) return null;
+  const token = header.slice(BEARER_PREFIX.length).trim();
+  return token.length > 0 ? token : null;
+}
+
 export function requireSession(
   deps: RequireSessionDeps,
 ): MiddlewareHandler<{ Variables: AuthVars }> {
   return async (c, next) => {
     const cookies = parseCookies(c.req.header('cookie'));
-    const token = cookies[SESSION_COOKIE_NAME];
-    if (token === undefined || token.length === 0) {
+    const cookieToken = cookies[SESSION_COOKIE_NAME];
+    const bearerToken = extractBearerToken(c.req.header('authorization'));
+    const token =
+      bearerToken !== null && bearerToken.length > 0
+        ? bearerToken
+        : cookieToken !== undefined && cookieToken.length > 0
+          ? cookieToken
+          : null;
+    if (token === null) {
       return c.json({ error: { code: 'unauthenticated', message: 'no session' } }, 401);
     }
     let claims: SessionClaims;
