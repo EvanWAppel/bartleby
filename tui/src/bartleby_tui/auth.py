@@ -33,6 +33,23 @@ class TokenSet:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class UserInfo:
+    """T-024: per-user identity returned by GET /auth/me.
+
+    The TUI fetches this once after auth and exposes it to the presence
+    rendering layer (T-018's status_bar) so the current user's awareness
+    payload carries a server-assigned color. The color is deterministic
+    per-email server-side (see server/src/auth/store.ts PRESENCE_PALETTE)
+    so two clients agree on the color for the same user.
+    """
+
+    id: str
+    email: str
+    display_name: str
+    color: str
+
+
 class TokenStore(Protocol):
     def load(self) -> TokenSet | None: ...
 
@@ -176,6 +193,44 @@ def _post_json_sync(url: str, payload: dict[str, object]) -> dict[str, Any]:
         data=body,
         headers={"content-type": "application/json", "accept": "application/json"},
         method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as res:
+        decoded = json.loads(res.read().decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise DeviceAuthError("expected JSON object response")
+    return decoded
+
+
+async def fetch_user_info(http_base_url: str, access_token: str) -> UserInfo:
+    """T-024: GET /auth/me with a Bearer access token.
+
+    Used by the TUI on startup to learn the user's server-assigned color
+    (and id/email/display_name). The result is then handed to the presence
+    layer so cursors render in the server-canonical color.
+
+    Raises DeviceAuthError on transport / JSON / shape errors so callers
+    can surface a clean message (the TUI app currently logs + continues
+    without presence color rather than crashing).
+    """
+
+    base = http_base_url.rstrip("/")
+    data = await asyncio.to_thread(_get_json_sync, f"{base}/auth/me", access_token)
+    return UserInfo(
+        id=_require_str(data, "id"),
+        email=_require_str(data, "email"),
+        display_name=_require_str(data, "display_name"),
+        color=_require_str(data, "color"),
+    )
+
+
+def _get_json_sync(url: str, access_token: str) -> dict[str, Any]:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "accept": "application/json",
+            "authorization": f"Bearer {access_token}",
+        },
+        method="GET",
     )
     with urllib.request.urlopen(req, timeout=10) as res:
         decoded = json.loads(res.read().decode("utf-8"))

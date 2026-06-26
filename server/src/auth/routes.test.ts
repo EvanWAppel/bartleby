@@ -206,6 +206,82 @@ describe('GET /auth/me (A-003, A-004)', () => {
     expect(body.color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(body.id.length).toBeGreaterThan(0);
   });
+
+  // T-024: TUI consumes /auth/me with a Bearer access token (no cookie).
+  it('accepts an Authorization: Bearer access token (T-024)', async () => {
+    const harness = makeHarness();
+    // Sign in once to get a session cookie, then complete the device flow
+    // to mint a Bearer access token. Use the device-code path the TUI uses.
+    const startRes = await harness.app.request(`${PUBLIC}/auth/google/start`);
+    const state = pickCookie(getSetCookies(startRes), 'bartleby_oauth_state') ?? '';
+    const cbRes = await harness.app.request(
+      `${PUBLIC}/auth/google/callback?code=goog-code&state=${state}`,
+      { headers: { cookie: `bartleby_oauth_state=${state}` } },
+    );
+    const sessionCookie = pickCookie(getSetCookies(cbRes), SESSION_COOKIE_NAME) ?? '';
+
+    const devStart = await harness.app.request(`${PUBLIC}/auth/device/start`, { method: 'POST' });
+    const started = (await devStart.json()) as { device_code: string; user_code: string };
+    await harness.app.request(`${PUBLIC}/device/approve`, {
+      method: 'POST',
+      headers: {
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ user_code: started.user_code }),
+    });
+    const pollRes = await harness.app.request(`${PUBLIC}/auth/device/poll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_code: started.device_code }),
+    });
+    const { access_token: accessToken } = (await pollRes.json()) as { access_token: string };
+
+    // The TUI path: no cookie, Authorization: Bearer <jwt>.
+    const meRes = await harness.app.request(`${PUBLIC}/auth/me`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(meRes.status).toBe(200);
+    const body = (await meRes.json()) as {
+      email: string;
+      color: string;
+    };
+    expect(body.email).toBe('alice@example.com');
+    expect(body.color).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  // T-024: deterministic palette → two distinct users get distinct colors,
+  // surfaced through /auth/me. This is the acceptance test for the task.
+  it('assigns distinct colors to two distinct users via /auth/me (T-024)', async () => {
+    async function meColorFor(email: string, displayName: string): Promise<string> {
+      const harness = makeHarness({
+        allowedEmails: 'alice@example.com,bob@example.com',
+        google: makeGoogleStub({
+          async fetchUserInfo() {
+            return { email, displayName, emailVerified: true };
+          },
+        }),
+      });
+      const startRes = await harness.app.request(`${PUBLIC}/auth/google/start`);
+      const state = pickCookie(getSetCookies(startRes), 'bartleby_oauth_state') ?? '';
+      const cbRes = await harness.app.request(
+        `${PUBLIC}/auth/google/callback?code=goog-code&state=${state}`,
+        { headers: { cookie: `bartleby_oauth_state=${state}` } },
+      );
+      const cookie = pickCookie(getSetCookies(cbRes), SESSION_COOKIE_NAME) ?? '';
+      const meRes = await harness.app.request(`${PUBLIC}/auth/me`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${cookie}` },
+      });
+      const body = (await meRes.json()) as { color: string };
+      return body.color;
+    }
+
+    const aliceColor = await meColorFor('alice@example.com', 'Alice');
+    const bobColor = await meColorFor('bob@example.com', 'Bob');
+    expect(aliceColor).not.toBe(bobColor);
+    expect(aliceColor).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(bobColor).toMatch(/^#[0-9a-f]{6}$/i);
+  });
 });
 
 describe('POST /auth/logout (A-005)', () => {

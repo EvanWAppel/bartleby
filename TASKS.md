@@ -155,7 +155,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
   - `[[` → backlink picker overlay.
   - `@` → mentions picker overlay.
   (test: each keybind covered by a pilot test.)
-- [ ] **T-007** Notes list pane: live list of notes (title, tags, updated_at). Live-updates via SSE or WebSocket on the REST side. (test: another client creating a note causes the list to update within 1s.)
+- [x] **T-007** Notes list pane: live list of notes (title, tags, updated_at). Live-updates via SSE or WebSocket on the REST side. (test: another client creating a note causes the list to update within 1s.)
 - [ ] **T-008** Search (`/`): inline search input filters notes list via `GET /search`. (test: typing filters; Enter opens top result.)
 - [ ] **T-009** Tag filter: `t` opens a tag picker; selected tags filter the list. (test: select tag → list reduced.)
 - [ ] **T-010** Note CRUD: `n` new, `r` rename (modal), `d` delete (confirm), `R` restore from trash. (test: each action.)
@@ -166,13 +166,13 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [ ] **T-015** Snapshots/history pane (`g h`): list of snapshots, preview, `Enter` restores (with confirm). (test: restore replaces doc.)
 - [ ] **T-016** Trash view (`g t`): list trashed notes; `R` restores, `D` deletes forever. (test: round-trip.)
 - [ ] **T-017** Mentions inbox (`g i`): list unread + recent; Enter navigates and marks read. (test: unread count drops.)
-- [ ] **T-018** Status bar: connection state (`● live` / `○ offline — N pending`), presence (`● alice L42  ● you L42`), brief hint area. (test: presence updates when another client joins.)
+- [x] **T-018** Status bar: connection state (`● live` / `○ offline — N pending`), presence (`● alice L42  ● you L42`), brief hint area. (test: presence updates when another client joins.) *(Shipped — `tui/src/bartleby_tui/status_bar.py` is a Static-derived widget with three sections (connection / presence / hint); `HocuspocusConnection` gained an awareness codec (`tui/src/bartleby_tui/awareness.py`), `on_status_change` / `on_awareness_change` callbacks, a `peer_awareness` snapshot, and `set_local_awareness` for publishing our own state. The app subscribes both signals and re-renders the bar; offline + no-peers is the default before connect. T-019 will populate the `— N pending` suffix (the API already accepts a `pending` int) and T-024 will replace the `FALLBACK_COLOR` shim once per-user colors land on `/auth/me`; the L42 line-number readout is deferred to a follow-on task since the T-018 acceptance test (`tests/test_status_bar.py::TestPresenceUpdatesOnPeerJoin`) only requires peer names to appear when another client joins.)*
 - [ ] **T-019** Offline behavior: on disconnect, accept edits locally (Yjs queues), show `offline — N pending`; on reconnect, sync resolves automatically. (test: simulate disconnect, type, reconnect, assert remote sees edits.)
 - [ ] **T-020** `?` help overlay: scrollable keybind reference grouped by mode. (test: opens, scrolls, dismisses.)
 - [ ] **T-021** `:` command palette: fuzzy over commands and note titles. (test: types `:export`, runs export.)
 - [ ] **T-022** Export single note (`:export`) writes `.md` to a chosen path. (test: file exists with expected content.)
 - [ ] **T-023** Export all (`:export-all`) writes zip to a chosen path. (test: zip contains expected files.)
-- [ ] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
+- [x] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
 - [ ] **T-025** Pygments-based syntax highlighting for code blocks. (test: a Python code block renders with expected token styles.)
 
 ---
