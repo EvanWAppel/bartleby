@@ -100,4 +100,51 @@ describe('in-memory session store (A-001..A-005)', () => {
       expect(await store.isJtiRevoked('j2')).toBe(false);
     });
   });
+
+  describe('device authorization rows (A-006..A-008)', () => {
+    it('creates pending rows and approves them by user_code', async () => {
+      const expiresAt = new Date(Date.now() + 60_000);
+      const row = await store.createDeviceAuthorization({
+        deviceCode: 'device-1',
+        userCode: 'ABCD-1234',
+        verificationUri: 'http://localhost:3000/device',
+        intervalSeconds: 5,
+        expiresAt,
+      });
+      expect(row.approvedUserId).toBeNull();
+      expect(await store.getDeviceAuthorizationByCode('device-1')).toEqual(row);
+
+      const user = await store.upsertUserByEmail({
+        email: 'alice@example.com',
+        displayName: 'Alice',
+      });
+      const approved = await store.approveDeviceAuthorization({
+        userCode: 'ABCD-1234',
+        userId: user.id,
+      });
+      expect(approved.approvedUserId).toBe(user.id);
+      expect((await store.getDeviceAuthorizationByCode('device-1'))?.approvedUserId).toBe(user.id);
+    });
+  });
+
+  describe('refresh tokens (A-009)', () => {
+    it('creates, reads, and revokes opaque refresh tokens', async () => {
+      const user = await store.upsertUserByEmail({
+        email: 'alice@example.com',
+        displayName: 'Alice',
+      });
+      const expiresAt = new Date(Date.now() + 60_000);
+      const token = await store.createRefreshToken({
+        token: 'refresh-1',
+        userId: user.id,
+        expiresAt,
+      });
+      expect(token.revokedAt).toBeNull();
+      expect(await store.getRefreshToken('refresh-1')).toEqual(token);
+
+      await store.revokeRefreshToken('refresh-1');
+      const revoked = await store.getRefreshToken('refresh-1');
+      expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    });
+  });
 });

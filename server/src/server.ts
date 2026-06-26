@@ -8,6 +8,7 @@
 import { SQLite } from '@hocuspocus/extension-sqlite';
 import { Server } from '@hocuspocus/server';
 import type { Extension, Hocuspocus } from '@hocuspocus/server';
+import { createHocuspocusAuthExtension, type HocuspocusAuthDeps } from './auth/hocuspocus.js';
 
 export interface BartlebyServerOptions {
   port: number;
@@ -26,6 +27,8 @@ export interface BartlebyServerOptions {
    * bare-server tests stay unaffected.
    */
   extraExtensions?: Extension[];
+  /** Optional A-010 bearer-token auth for WebSocket clients. */
+  auth?: HocuspocusAuthDeps;
 }
 
 export interface BartlebyServer {
@@ -54,11 +57,14 @@ export async function createBartlebyServer(
   // its underlying better-sqlite3 handle (the extension exposes `.db`).
   const sqlite = new SQLite({ database: databasePath });
 
+  const authExtension =
+    options.auth === undefined ? [] : [createHocuspocusAuthExtension(options.auth)];
+
   const server = new Server({
     port: options.port,
     address: options.address ?? '127.0.0.1',
     quiet: true,
-    extensions: [sqlite, ...(options.extraExtensions ?? [])],
+    extensions: [sqlite, ...authExtension, ...(options.extraExtensions ?? [])],
     async onRequest({ request, response }) {
       if (request.url !== '/health') {
         return;

@@ -50,6 +50,8 @@ export interface BartlebyHttpOptions {
   env: Record<string, string | undefined>;
   db: Database;
   logger: Logger;
+  /** Optional shared store; A-010 passes this to both HTTP and WS auth. */
+  store?: SessionStore;
   /** Optional: when present, mounts the C-002..C-006 snapshot routes. */
   hocuspocus?: Hocuspocus;
   /** See `BuildHttpAppDeps.onMentionInserted`. */
@@ -63,6 +65,7 @@ export interface BartlebyHttpOptions {
 export interface BuildHttpAppDeps {
   db: Database;
   logger: Logger;
+  store?: SessionStore;
   /** Optional Yjs accessor for snapshot endpoints (C-002..C-006).
    * Tests that don't exercise snapshots can omit this; the snapshot
    * routes get mounted only when an accessor is supplied. */
@@ -107,7 +110,7 @@ export function buildBartlebyHttpApp(
   const sessionConfig = buildSessionConfig(env);
   const allowlist = loadAllowlist(env);
   const googleConfig = loadGoogleConfig(env);
-  const store = createInMemorySessionStore();
+  const store = deps.store ?? createInMemorySessionStore();
   const google = createGoogleClient(googleConfig);
   const repos = createRepositories(deps.db);
 
@@ -209,6 +212,7 @@ export function createBartlebyHttpServer(
   const { app, store } = buildBartlebyHttpApp(options.env, {
     db: options.db,
     logger: options.logger,
+    store: options.store,
     yjs,
     onMentionInserted: options.onMentionInserted,
     testEmailRecorder: options.testEmailRecorder,

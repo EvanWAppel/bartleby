@@ -74,11 +74,11 @@ Google OAuth allowlist + session cookies (web) + device-code flow (TUI). All rou
 - [x] **A-003** Session middleware: signed cookie containing user id; rejects unauthenticated requests on protected routes. (test: protected route returns 401 without cookie, 200 with valid cookie, 401 with tampered cookie.)
 - [x] **A-004** `GET /auth/me` returns the current user (id, email, display_name, color). (test: returns user data when authed, 401 otherwise.)
 - [x] **A-005** `POST /auth/logout` clears the session cookie. (test: subsequent request is unauthed.)
-- [ ] **A-006** Device-code start: `POST /auth/device/start` returns `{ device_code, user_code, verification_uri, interval, expires_in }`; stores pending row. (test: returns shape; row exists.)
-- [ ] **A-007** Device-code verify page: `GET /device` HTML page; `POST /device/approve` looks up user_code, attaches the authenticated user, marks approved. (test: unauthenticated user is redirected to OAuth then back to /device; approving marks row.)
-- [ ] **A-008** Device-code poll: `POST /auth/device/poll` with device_code returns 428 while pending, 200 with refresh+access tokens once approved, 410 if expired. (test: state machine covered.)
-- [ ] **A-009** Token refresh: `POST /auth/token/refresh`. (test: refresh issues new access token; revoked refresh token returns 401.)
-- [ ] **A-010** Hocuspocus auth hook: validates Bearer token on `onConnect`; rejects unauthenticated connections; attaches user id to the connection context. (test: WS handshake without token closes; with valid token succeeds.)
+- [x] **A-006** Device-code start: `POST /auth/device/start` returns `{ device_code, user_code, verification_uri, interval, expires_in }`; stores pending row. (test: returns shape; row exists.)
+- [x] **A-007** Device-code verify page: `GET /device` HTML page; `POST /device/approve` looks up user_code, attaches the authenticated user, marks approved. (test: unauthenticated user is redirected to OAuth then back to /device; approving marks row.)
+- [x] **A-008** Device-code poll: `POST /auth/device/poll` with device_code returns 428 while pending, 200 with refresh+access tokens once approved, 410 if expired. (test: state machine covered.)
+- [x] **A-009** Token refresh: `POST /auth/token/refresh`. (test: refresh issues new access token; revoked refresh token returns 401.)
+- [x] **A-010** Hocuspocus auth hook: validates Bearer token on `onConnect`; rejects unauthenticated connections; attaches user id to the connection context. (test: WS handshake without token closes; with valid token succeeds.)
 
 ---
 
@@ -142,8 +142,8 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 `textual` + `y-py`. All tests use `textual.pilot` for UI assertions and pytest fixtures for server setup. Depends on V-* and A-006/A-007/A-008 (device-code flow).
 
 - [x] **T-001** App skeleton: `Notes` pane (left), `Editor` pane (main), `StatusBar` (bottom). Empty placeholder content. (test: pilot snapshot of layout regions.)
-- [ ] **T-002** Device-code first-run: if no token in keychain, print device-code URL + code, poll until approved, store token. (test: integration test against a mock auth server runs the full flow.)
-- [ ] **T-003** y-py connection layer: connects to `wss://.../collab/note:<id>` with Bearer token, subscribes to a YDoc, exposes `apply_local_op(op)` and `on_remote_update(callback)`. (test: two clients on same room see each other's updates.)
+- [x] **T-002** Device-code first-run: if no token in keychain, print device-code URL + code, poll until approved, store token. (test: integration test against a mock auth server runs the full flow.)
+- [x] **T-003** y-py connection layer: connects to `wss://.../collab/note:<id>` with Bearer token, subscribes to a YDoc, exposes `apply_local_op(op)` and `on_remote_update(callback)`. (test: two clients on same room see each other's updates.)
 - [ ] **T-004** Renderer: walks the ProseMirror-compatible Yjs document and produces a textual `RichLog` (or custom widget) representation. Supports: paragraphs, H1–H6, bold/italic/strike (rich text styles), links (underline + color, footnoted), bullet/ordered lists, blockquote (left bar), task lists (`[ ]` / `[x]`), code blocks (bordered, syntax-highlighted via pygments). (test: snapshot per node type.)
 - [ ] **T-005** Editing primitives: `insert_text`, `delete_range`, `toggle_mark`, `set_block_type`, `wrap_in_list`, `toggle_task` — each emits the corresponding Yjs op. (test: unit tests over a mock YDoc.)
 - [ ] **T-006** Keybinds (vim-flavored, discoverable via `?`):

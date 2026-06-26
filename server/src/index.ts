@@ -23,6 +23,7 @@ import { createBartlebyServer } from './server.js';
 import { createBartlebyHttpServer } from './http.js';
 import { createAutoSnapshotScheduler } from './snapshots/scheduler.js';
 import { createHocuspocusAccessor } from './snapshots/yjs-access.js';
+import { buildSessionConfig, createInMemorySessionStore } from './auth/index.js';
 
 export function placeholder(): string {
   return 'bartleby-server';
@@ -56,6 +57,9 @@ async function main(): Promise<void> {
   const db = openDatabase(config.BARTLEBY_DB_PATH);
   await runMigrations({ db, logger });
   const repos = createRepositories(db);
+  const authEnabled = config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0;
+  const sharedSessionStore = authEnabled ? createInMemorySessionStore() : undefined;
+  const sharedSessionConfig = authEnabled ? buildSessionConfig(process.env) : undefined;
 
   // 4a. M-005/M-006/M-007 mention-email pipeline. Resend is the
   //     provider. When RESEND_API_KEY is unset we wire a no-op
@@ -122,6 +126,10 @@ async function main(): Promise<void> {
     databasePath: config.BARTLEBY_DB_PATH,
     address: config.BARTLEBY_BIND_ADDRESS,
     extraExtensions: [derivedHook],
+    auth:
+      sharedSessionConfig !== undefined && sharedSessionStore !== undefined
+        ? { sessionConfig: sharedSessionConfig, store: sharedSessionStore }
+        : undefined,
   });
 
   // 5. Hourly trash purge. Hard-deletes notes whose trashed_at is
@@ -150,12 +158,13 @@ async function main(): Promise<void> {
   //    BARTLEBY_ALLOWED_EMAILS / GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
   //    Local dev and integ tests can run with just the WS server.
   let http: Awaited<ReturnType<typeof createBartlebyHttpServer>> | undefined;
-  if (config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0) {
+  if (authEnabled) {
     http = await createBartlebyHttpServer({
       port: config.HTTP_PORT,
       env: process.env,
       db,
       logger,
+      store: sharedSessionStore,
       hocuspocus: ws.hocuspocus,
       onMentionInserted:
         mentionPipeline !== undefined ? (id) => mentionPipeline!.enqueueByMentionId(id) : undefined,

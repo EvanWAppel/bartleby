@@ -5,12 +5,14 @@ from __future__ import annotations
 import pytest
 
 from bartleby_tui.protocol import (
+    AUTH_TOKEN,
     MESSAGE_TYPE_AUTH,
     MESSAGE_TYPE_AWARENESS,
     MESSAGE_TYPE_SYNC,
     SYNC_STEP_1,
     SYNC_STEP_2,
     SYNC_UPDATE,
+    build_auth_token,
     build_message,
     decode_varbytes,
     decode_varstring,
@@ -93,6 +95,21 @@ class TestMessageFraming:
         assert parsed.doc_name == "vertical-slice"
         assert parsed.msg_type == MESSAGE_TYPE_SYNC
         assert parsed.payload == b"\x01\x02\x03"
+
+    def test_auth_token_frame_carries_bearer_token_and_client_version(self) -> None:
+        msg = build_auth_token("note:abc", "Bearer access-token", client_version="test-client")
+        parsed = parse_message(msg)
+        assert parsed.doc_name == "note:abc"
+        assert parsed.msg_type == MESSAGE_TYPE_AUTH
+
+        subtype, offset = decode_varuint(parsed.payload, 0)
+        token, offset = decode_varstring(parsed.payload, offset)
+        version, offset = decode_varstring(parsed.payload, offset)
+
+        assert subtype == AUTH_TOKEN
+        assert token == "Bearer access-token"
+        assert version == "test-client"
+        assert offset == len(parsed.payload)
 
 
 class TestConstants:

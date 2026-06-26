@@ -10,6 +10,8 @@ export {
   parseCookies,
   SESSION_COOKIE_NAME,
   SESSION_TTL_SECONDS,
+  ACCESS_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
   SessionConfigError,
   type SessionConfig,
   type SessionClaims,
@@ -30,3 +32,8 @@ export {
 } from './google.js';
 export { requireSession, type AuthVars, type RequireSessionDeps } from './middleware.js';
 export { createAuthApp, type AuthAppDeps, type AuthAppConfig } from './routes.js';
+export {
+  createHocuspocusAuthExtension,
+  type HocuspocusAuthContext,
+  type HocuspocusAuthDeps,
+} from './hocuspocus.js';

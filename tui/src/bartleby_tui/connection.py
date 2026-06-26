@@ -53,10 +53,12 @@ class HocuspocusConnection:
         url: str,
         doc_name: str,
         document: Y.YDoc,
+        bearer_token: str | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.doc_name = doc_name
         self.document = document
+        self.bearer_token = bearer_token
 
         self._ws: websockets.ClientConnection | None = None
         self._recv_task: asyncio.Task[None] | None = None
@@ -99,8 +101,10 @@ class HocuspocusConnection:
 
         # Hocuspocus queues all incoming traffic until the client sends an Auth
         # message; only then does it forward sync messages to the document.
-        # For our no-auth server an empty token is accepted.
-        await self._ws.send(build_auth_token(self.doc_name))
+        # Authenticated servers expect a Bearer token; unauthenticated local
+        # servers still accept the empty token used by the vertical-slice tests.
+        token = f"Bearer {self.bearer_token}" if self.bearer_token is not None else ""
+        await self._ws.send(build_auth_token(self.doc_name, token))
 
         # Kick off sync handshake.
         sv = Y.encode_state_vector(self.document)

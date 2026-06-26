@@ -25,7 +25,9 @@ so the existing live-collab behavior is preserved.
 from __future__ import annotations
 
 import logging
-from typing import ClassVar
+import os
+import sys
+from typing import ClassVar, TextIO
 
 import y_py as Y
 from textual.app import App, ComposeResult
@@ -33,6 +35,7 @@ from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Static, TextArea
 
+from bartleby_tui.auth import TokenStore, ensure_access_token
 from bartleby_tui.connection import HocuspocusConnection
 
 log = logging.getLogger(__name__)
@@ -106,11 +109,18 @@ class BartlebyApp(App[None]):
         server_url: str = DEFAULT_SERVER_URL,
         doc_name: str = DEFAULT_DOC_NAME,
         connect_on_mount: bool = True,
+        http_base_url: str | None = None,
+        token_store: TokenStore | None = None,
+        auth_output: TextIO | None = None,
     ) -> None:
         super().__init__()
         self._server_url = server_url
         self._doc_name = doc_name
         self._connect_on_mount = connect_on_mount
+        self._http_base_url = http_base_url
+        self._token_store = token_store
+        self._auth_output = auth_output
+        self._access_token: str | None = None
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
@@ -150,10 +160,17 @@ class BartlebyApp(App[None]):
             return
 
         log.info("connecting to %s room=%s", self._server_url, self._doc_name)
+        if self._http_base_url is not None:
+            self._access_token = await ensure_access_token(
+                self._http_base_url,
+                store=self._token_store,
+                output=self._auth_output if self._auth_output is not None else sys.stderr,
+            )
         self.connection = HocuspocusConnection(
             url=self._server_url,
             doc_name=self._doc_name,
             document=self._doc,
+            bearer_token=self._access_token,
         )
         self.connection.on_document_update(self._on_doc_update)
         await self.connection.__aenter__()
@@ -225,4 +242,4 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    BartlebyApp().run()
+    BartlebyApp(http_base_url=os.environ.get("BARTLEBY_HTTP_URL")).run()
