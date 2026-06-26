@@ -4,7 +4,12 @@ import io
 
 import pytest
 
-from bartleby_tui.auth import DeviceAuthError, TokenSet, ensure_access_token
+from bartleby_tui.auth import (
+    DeviceAuthError,
+    TokenSet,
+    ensure_access_token,
+    fetch_user_info,
+)
 
 
 class MemoryTokenStore:
@@ -82,3 +87,54 @@ async def test_device_code_expiry_raises_and_does_not_store_token(mock_device_au
         )
 
     assert store.saved is None
+
+
+# T-024: TUI consumes GET /auth/me to learn the server-assigned color.
+
+
+async def test_fetch_user_info_returns_color_and_identity(mock_device_auth_server) -> None:
+    info = await fetch_user_info(
+        mock_device_auth_server.base_url,
+        mock_device_auth_server.access_token,
+    )
+
+    assert info.id == mock_device_auth_server.user_id
+    assert info.email == mock_device_auth_server.user_email
+    assert info.display_name == mock_device_auth_server.user_display_name
+    assert info.color == mock_device_auth_server.user_color
+    assert info.color.startswith("#")
+    assert (
+        mock_device_auth_server.last_authorization
+        == f"Bearer {mock_device_auth_server.access_token}"
+    )
+    assert mock_device_auth_server.me_count == 1
+
+
+async def test_fetch_user_info_rejects_bad_token(mock_device_auth_server) -> None:
+    # Wrong token → 401 → urllib HTTPError; we don't wrap, per agents.md.
+    import urllib.error
+
+    with pytest.raises(urllib.error.HTTPError):
+        await fetch_user_info(mock_device_auth_server.base_url, "not-a-real-token")
+
+
+async def test_two_users_have_distinct_colors_from_auth_me(mock_device_auth_server) -> None:
+    """Acceptance for T-024: two users surface distinct palette entries."""
+    # Round 1: default state (Alice / palette entry A).
+    alice = await fetch_user_info(
+        mock_device_auth_server.base_url,
+        mock_device_auth_server.access_token,
+    )
+
+    # Round 2: flip the server to a different user.
+    mock_device_auth_server.user_id = "user-2"
+    mock_device_auth_server.user_email = "bob@example.com"
+    mock_device_auth_server.user_display_name = "Bob"
+    mock_device_auth_server.user_color = "#e6194b"
+    bob = await fetch_user_info(
+        mock_device_auth_server.base_url,
+        mock_device_auth_server.access_token,
+    )
+
+    assert alice.color != bob.color
+    assert alice.email != bob.email

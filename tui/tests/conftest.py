@@ -36,9 +36,18 @@ class MockDeviceAuthServer:
     user_code: str
     access_token: str
     refresh_token: str
+    # T-024: /auth/me response shape, served when the client presents
+    # an Authorization: Bearer <access_token>. Tests can mutate these
+    # before issuing the request to model different users.
+    user_id: str = "user-1"
+    user_email: str = "alice@example.com"
+    user_display_name: str = "Alice"
+    user_color: str = "#3cb44b"
     approved: bool = False
     expired: bool = False
     poll_count: int = 0
+    me_count: int = 0
+    last_authorization: str | None = None
 
     def approve(self) -> None:
         self.approved = True
@@ -138,6 +147,28 @@ def mock_device_auth_server() -> Iterator[MockDeviceAuthServer]:
         def log_message(self, format: str, *args: Any) -> None:
             del format, args
             return
+
+        def do_GET(self) -> None:
+            if self.path == "/auth/me":
+                state.me_count += 1
+                state.last_authorization = self.headers.get("authorization")
+                if state.last_authorization != f"Bearer {state.access_token}":
+                    self._json(
+                        401,
+                        {"error": {"code": "unauthenticated", "message": "no session"}},
+                    )
+                    return
+                self._json(
+                    200,
+                    {
+                        "id": state.user_id,
+                        "email": state.user_email,
+                        "display_name": state.user_display_name,
+                        "color": state.user_color,
+                    },
+                )
+                return
+            self._json(404, {"error": {"code": "not_found", "message": "not found"}})
 
         def do_POST(self) -> None:
             length = int(self.headers.get("content-length", "0"))

@@ -35,7 +35,7 @@ from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Static, TextArea
 
-from bartleby_tui.auth import TokenStore, ensure_access_token
+from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 
 log = logging.getLogger(__name__)
@@ -121,6 +121,10 @@ class BartlebyApp(App[None]):
         self._token_store = token_store
         self._auth_output = auth_output
         self._access_token: str | None = None
+        # T-024: populated after we exchange the access token for /auth/me.
+        # Exposed as a public attr so the presence rendering layer (T-018's
+        # status bar) can read the server-assigned color without re-fetching.
+        self.user_info: UserInfo | None = None
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
@@ -165,6 +169,15 @@ class BartlebyApp(App[None]):
                 self._http_base_url,
                 store=self._token_store,
                 output=self._auth_output if self._auth_output is not None else sys.stderr,
+            )
+            # T-024: pick up the server-assigned color (and id/email/name)
+            # so T-018's presence layer can use it.
+            self.user_info = await fetch_user_info(self._http_base_url, self._access_token)
+            log.info(
+                "auth/me: id=%s display_name=%s color=%s",
+                self.user_info.id,
+                self.user_info.display_name,
+                self.user_info.color,
             )
         self.connection = HocuspocusConnection(
             url=self._server_url,
