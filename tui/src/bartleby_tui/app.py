@@ -17,9 +17,11 @@ shape the rest of Workstream T will populate:
     +---------------------------------------------------+
 
 Each region carries a stable ``id`` attribute so later tasks (T-007 notes
-list, T-004 renderer, T-018 status bar) can target them without touching
-the skeleton. The Phase 0 editor (BodyEditor) lives inside ``#editor-pane``
-so the existing live-collab behavior is preserved.
+list, T-004 renderer) can target them without touching the skeleton. The
+Phase 0 editor (BodyEditor) lives inside ``#editor-pane`` so the existing
+live-collab behavior is preserved. T-018 replaces the status-bar
+placeholder with a real ``StatusBar`` widget driven by connection +
+awareness events.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import ClassVar, TextIO
+from typing import Any, ClassVar, TextIO
 
 import y_py as Y
 from textual.app import App, ComposeResult
@@ -37,6 +39,7 @@ from textual.widgets import Footer, Header, Static, TextArea
 
 from bartleby_tui.auth import TokenStore, ensure_access_token
 from bartleby_tui.connection import HocuspocusConnection
+from bartleby_tui.status_bar import StatusBar
 
 log = logging.getLogger(__name__)
 
@@ -91,13 +94,7 @@ class BartlebyApp(App[None]):
         padding: 0;
     }
 
-    #status-bar {
-        dock: bottom;
-        height: 1;
-        background: $boost;
-        color: $text;
-        padding: 0 1;
-    }
+    /* StatusBar carries its own DEFAULT_CSS; nothing to override here. */
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -124,6 +121,7 @@ class BartlebyApp(App[None]):
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
+        self._status_bar: StatusBar | None = None
         # Snapshot of the last text we pushed into the TextArea. We use it
         # to suppress echoes when the YDoc->TextArea sync emits a Changed.
         self._last_applied_text: str = ""
@@ -149,8 +147,9 @@ class BartlebyApp(App[None]):
                 view = BodyEditor(text="", id="body", show_line_numbers=False)
                 self._body_view = view
                 yield view
-        # T-018 will wire connection state + presence into this bar.
-        yield Static("", id="status-bar")
+        bar = StatusBar()
+        self._status_bar = bar
+        yield bar
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -173,9 +172,24 @@ class BartlebyApp(App[None]):
             bearer_token=self._access_token,
         )
         self.connection.on_document_update(self._on_doc_update)
+        self.connection.on_status_change(self._on_status_change)
+        self.connection.on_awareness_change(self._on_awareness_change)
         await self.connection.__aenter__()
         # Initial paint from server state if any arrived during sync.
         self._refresh_from_doc()
+        # Seed the status bar with the current snapshot. The transition-only
+        # callbacks above fire on *future* changes; on_mount's "we just
+        # connected" event needs an explicit push.
+        if self._status_bar is not None:
+            self._status_bar.set_connected(self.connection.is_connected)
+            self._status_bar.set_peers(self.connection.peer_awareness)
+        # T-024 is in flight on a parallel branch; once it wires per-user
+        # colors into /auth/me we can publish a richer local user state.
+        # For T-018 we only need *something* keyed under "user" so peers'
+        # status bars show "you" symmetrically.
+        self.connection.set_local_awareness({"user": {"name": "you"}})
+        if self._status_bar is not None:
+            self._status_bar.set_self({"user": {"name": "you"}})
         if self._body_view is not None:
             self._body_view.focus()
 
@@ -183,6 +197,20 @@ class BartlebyApp(App[None]):
         if self.connection is not None:
             await self.connection.__aexit__(None, None, None)
             self.connection = None
+
+    # --------------------------------------------------- connection -> status bar
+
+    def _on_status_change(self, connected: bool) -> None:
+        """Forward WS connect/disconnect transitions to the status bar."""
+        if self._status_bar is None:
+            return
+        self._status_bar.set_connected(connected)
+
+    def _on_awareness_change(self, peers: dict[int, dict[str, Any]]) -> None:
+        """Forward peer-awareness updates to the status bar's presence section."""
+        if self._status_bar is None:
+            return
+        self._status_bar.set_peers(peers)
 
     # ------------------------------------------------------------------ YDoc -> view
 
