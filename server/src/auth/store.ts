@@ -33,6 +33,12 @@ export interface SessionStore {
   listUsers(): Promise<User[]>;
   revokeJti(jti: string): Promise<void>;
   isJtiRevoked(jti: string): Promise<boolean>;
+  createDeviceAuthorization(input: CreateDeviceAuthorizationInput): Promise<DeviceAuthorization>;
+  getDeviceAuthorizationByCode(deviceCode: string): Promise<DeviceAuthorization | null>;
+  approveDeviceAuthorization(input: ApproveDeviceAuthorizationInput): Promise<DeviceAuthorization>;
+  createRefreshToken(input: CreateRefreshTokenInput): Promise<RefreshToken>;
+  getRefreshToken(token: string): Promise<RefreshToken | null>;
+  revokeRefreshToken(token: string): Promise<void>;
 }
 
 // Tasteful palette of distinguishable hex colors. Per PRD §8.1 a color is
@@ -53,6 +59,41 @@ const PRESENCE_PALETTE: readonly string[] = [
   '#469990',
 ];
 
+export interface DeviceAuthorization {
+  readonly deviceCode: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  readonly intervalSeconds: number;
+  readonly expiresAt: Date;
+  readonly approvedUserId: string | null;
+}
+
+export interface CreateDeviceAuthorizationInput {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  intervalSeconds: number;
+  expiresAt: Date;
+}
+
+export interface ApproveDeviceAuthorizationInput {
+  userCode: string;
+  userId: string;
+}
+
+export interface RefreshToken {
+  readonly token: string;
+  readonly userId: string;
+  readonly expiresAt: Date;
+  readonly revokedAt: Date | null;
+}
+
+export interface CreateRefreshTokenInput {
+  token: string;
+  userId: string;
+  expiresAt: Date;
+}
+
 function pickColor(email: string): string {
   const digest = createHash('sha256').update(email).digest();
   const firstByte = digest[0] ?? 0;
@@ -69,6 +110,9 @@ export function createInMemorySessionStore(): SessionStore {
   const usersByEmail = new Map<string, User>();
   const usersById = new Map<string, User>();
   const revokedJtis = new Set<string>();
+  const deviceAuthorizationsByDeviceCode = new Map<string, DeviceAuthorization>();
+  const deviceAuthorizationsByUserCode = new Map<string, DeviceAuthorization>();
+  const refreshTokens = new Map<string, RefreshToken>();
 
   return {
     async upsertUserByEmail({ email, displayName }: UpsertUserInput): Promise<User> {
@@ -106,6 +150,66 @@ export function createInMemorySessionStore(): SessionStore {
 
     async isJtiRevoked(jti: string): Promise<boolean> {
       return revokedJtis.has(jti);
+    },
+
+    async createDeviceAuthorization(
+      input: CreateDeviceAuthorizationInput,
+    ): Promise<DeviceAuthorization> {
+      const row: DeviceAuthorization = {
+        deviceCode: input.deviceCode,
+        userCode: input.userCode,
+        verificationUri: input.verificationUri,
+        intervalSeconds: input.intervalSeconds,
+        expiresAt: input.expiresAt,
+        approvedUserId: null,
+      };
+      deviceAuthorizationsByDeviceCode.set(row.deviceCode, row);
+      deviceAuthorizationsByUserCode.set(row.userCode, row);
+      return row;
+    },
+
+    async getDeviceAuthorizationByCode(deviceCode: string): Promise<DeviceAuthorization | null> {
+      return deviceAuthorizationsByDeviceCode.get(deviceCode) ?? null;
+    },
+
+    async approveDeviceAuthorization({
+      userCode,
+      userId,
+    }: ApproveDeviceAuthorizationInput): Promise<DeviceAuthorization> {
+      const existing = deviceAuthorizationsByUserCode.get(userCode);
+      if (existing === undefined) {
+        throw new Error(`device authorization ${userCode} not found`);
+      }
+      const updated: DeviceAuthorization = {
+        ...existing,
+        approvedUserId: userId,
+      };
+      deviceAuthorizationsByDeviceCode.set(updated.deviceCode, updated);
+      deviceAuthorizationsByUserCode.set(updated.userCode, updated);
+      return updated;
+    },
+
+    async createRefreshToken(input: CreateRefreshTokenInput): Promise<RefreshToken> {
+      const row: RefreshToken = {
+        token: input.token,
+        userId: input.userId,
+        expiresAt: input.expiresAt,
+        revokedAt: null,
+      };
+      refreshTokens.set(row.token, row);
+      return row;
+    },
+
+    async getRefreshToken(token: string): Promise<RefreshToken | null> {
+      return refreshTokens.get(token) ?? null;
+    },
+
+    async revokeRefreshToken(token: string): Promise<void> {
+      const existing = refreshTokens.get(token);
+      if (existing === undefined || existing.revokedAt !== null) {
+        return;
+      }
+      refreshTokens.set(token, { ...existing, revokedAt: new Date() });
     },
   };
 }

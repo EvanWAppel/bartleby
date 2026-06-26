@@ -260,3 +260,180 @@ describe('POST /auth/logout (A-005)', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('device-code flow (A-006..A-009)', () => {
+  async function signIn(harness: Harness): Promise<string> {
+    const startRes = await harness.app.request(`${PUBLIC}/auth/google/start`);
+    const startCookies = getSetCookies(startRes);
+    const state = pickCookie(startCookies, 'bartleby_oauth_state') ?? '';
+    const cbRes = await harness.app.request(
+      `${PUBLIC}/auth/google/callback?code=goog-code&state=${state}`,
+      { headers: { cookie: `bartleby_oauth_state=${state}` } },
+    );
+    return pickCookie(getSetCookies(cbRes), SESSION_COOKIE_NAME) ?? '';
+  }
+
+  it('POST /auth/device/start returns device-code shape and stores a pending row (A-006)', async () => {
+    const harness = makeHarness();
+    const res = await harness.app.request(`${PUBLIC}/auth/device/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      device_code: string;
+      user_code: string;
+      verification_uri: string;
+      interval: number;
+      expires_in: number;
+    };
+    expect(body.device_code).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(body.user_code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(body.verification_uri).toBe(`${PUBLIC}/device`);
+    expect(body.interval).toBeGreaterThan(0);
+    expect(body.expires_in).toBeGreaterThan(0);
+
+    const stored = await harness.store.getDeviceAuthorizationByCode(body.device_code);
+    expect(stored?.userCode).toBe(body.user_code);
+    expect(stored?.approvedUserId).toBeNull();
+  });
+
+  it('GET /device redirects unauthenticated users to OAuth and returns after callback (A-007)', async () => {
+    const harness = makeHarness();
+    const deviceRes = await harness.app.request(`${PUBLIC}/device?user_code=ABCD-1234`);
+    expect(deviceRes.status).toBe(302);
+    expect(deviceRes.headers.get('location')).toBe('/auth/google/start');
+    const returnCookie = getSetCookies(deviceRes).find((c) =>
+      c.startsWith('bartleby_post_login_redirect='),
+    );
+    expect(returnCookie).toContain(encodeURIComponent('/device?user_code=ABCD-1234'));
+
+    const startRes = await harness.app.request(`${PUBLIC}/auth/google/start`, {
+      headers: { cookie: returnCookie ?? '' },
+    });
+    const state = pickCookie(getSetCookies(startRes), 'bartleby_oauth_state') ?? '';
+    const cbRes = await harness.app.request(
+      `${PUBLIC}/auth/google/callback?code=goog-code&state=${state}`,
+      {
+        headers: {
+          cookie: `bartleby_oauth_state=${state}; ${returnCookie ?? ''}`,
+        },
+      },
+    );
+    expect(cbRes.status).toBe(302);
+    expect(cbRes.headers.get('location')).toBe(`${PUBLIC}/device?user_code=ABCD-1234`);
+  });
+
+  it('POST /device/approve attaches the authenticated user to the user_code (A-007)', async () => {
+    const harness = makeHarness();
+    const start = await harness.app.request(`${PUBLIC}/auth/device/start`, { method: 'POST' });
+    const started = (await start.json()) as { device_code: string; user_code: string };
+    const sessionCookie = await signIn(harness);
+
+    const res = await harness.app.request(`${PUBLIC}/device/approve`, {
+      method: 'POST',
+      headers: {
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ user_code: started.user_code }),
+    });
+    expect(res.status).toBe(200);
+    const stored = await harness.store.getDeviceAuthorizationByCode(started.device_code);
+    expect(stored?.approvedUserId).toBeTruthy();
+  });
+
+  it('POST /auth/device/poll returns 428 while pending, then access+refresh tokens once approved (A-008)', async () => {
+    const harness = makeHarness();
+    const start = await harness.app.request(`${PUBLIC}/auth/device/start`, { method: 'POST' });
+    const started = (await start.json()) as { device_code: string; user_code: string };
+
+    const pending = await harness.app.request(`${PUBLIC}/auth/device/poll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_code: started.device_code }),
+    });
+    expect(pending.status).toBe(428);
+
+    const sessionCookie = await signIn(harness);
+    await harness.app.request(`${PUBLIC}/device/approve`, {
+      method: 'POST',
+      headers: {
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ user_code: started.user_code }),
+    });
+
+    const approved = await harness.app.request(`${PUBLIC}/auth/device/poll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_code: started.device_code }),
+    });
+    expect(approved.status).toBe(200);
+    const body = (await approved.json()) as {
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+    };
+    expect(body.token_type).toBe('Bearer');
+    expect(body.access_token.length).toBeGreaterThan(20);
+    expect(body.refresh_token.length).toBeGreaterThan(20);
+    expect(body.expires_in).toBe(15 * 60);
+  });
+
+  it('POST /auth/device/poll returns 410 for expired device codes (A-008)', async () => {
+    const harness = makeHarness();
+    const past = new Date(Date.now() - 1_000);
+    const row = await harness.store.createDeviceAuthorization({
+      deviceCode: 'expired-device-code',
+      userCode: 'OLD1-CODE',
+      verificationUri: `${PUBLIC}/device`,
+      intervalSeconds: 5,
+      expiresAt: past,
+    });
+    expect(row.expiresAt).toBe(past);
+    const res = await harness.app.request(`${PUBLIC}/auth/device/poll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_code: 'expired-device-code' }),
+    });
+    expect(res.status).toBe(410);
+  });
+
+  it('POST /auth/token/refresh rotates a valid refresh token and rejects revoked tokens (A-009)', async () => {
+    const harness = makeHarness();
+    const start = await harness.app.request(`${PUBLIC}/auth/device/start`, { method: 'POST' });
+    const started = (await start.json()) as { device_code: string; user_code: string };
+    const sessionCookie = await signIn(harness);
+    await harness.app.request(`${PUBLIC}/device/approve`, {
+      method: 'POST',
+      headers: {
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ user_code: started.user_code }),
+    });
+    const poll = await harness.app.request(`${PUBLIC}/auth/device/poll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_code: started.device_code }),
+    });
+    const issued = (await poll.json()) as { refresh_token: string };
+
+    const refreshed = await harness.app.request(`${PUBLIC}/auth/token/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refresh_token: issued.refresh_token }),
+    });
+    expect(refreshed.status).toBe(200);
+    const rotated = (await refreshed.json()) as { access_token: string; refresh_token: string };
+    expect(rotated.access_token.length).toBeGreaterThan(20);
+    expect(rotated.refresh_token).not.toBe(issued.refresh_token);
+
+    const reused = await harness.app.request(`${PUBLIC}/auth/token/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refresh_token: issued.refresh_token }),
+    });
+    expect(reused.status).toBe(401);
+  });
+});

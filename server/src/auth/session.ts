@@ -9,6 +9,10 @@ export const SESSION_COOKIE_NAME = 'bartleby_session';
 
 /** Seven days. PRD doesn't pin a value; this is conservative for a tiny group. */
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** Short-lived bearer token for TUI/API device-code clients. */
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+/** Long-lived opaque refresh token lifetime for device-code clients. */
+export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const SESSION_JWT_ISSUER = 'bartleby';
 const SESSION_JWT_AUDIENCE = 'bartleby-web';
