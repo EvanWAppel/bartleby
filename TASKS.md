@@ -172,7 +172,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [ ] **T-021** `:` command palette: fuzzy over commands and note titles. (test: types `:export`, runs export.)
 - [ ] **T-022** Export single note (`:export`) writes `.md` to a chosen path. (test: file exists with expected content.)
 - [ ] **T-023** Export all (`:export-all`) writes zip to a chosen path. (test: zip contains expected files.)
-- [ ] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
+- [x] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
 - [ ] **T-025** Pygments-based syntax highlighting for code blocks. (test: a Python code block renders with expected token styles.)
 
 ---
