@@ -35,11 +35,15 @@ import y_py as Y
 from textual.app import App, ComposeResult
 from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
+from textual.timer import Timer
 from textual.widgets import Footer, Header, Static, TextArea
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
+from bartleby_tui.notes_api import fetch_notes
+from bartleby_tui.notes_list import NotesList
 from bartleby_tui.renderer import render_document, ydoc_to_blocks
+from bartleby_tui.status_bar import StatusBar
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +147,7 @@ class BartlebyApp(App[None]):
         self._http_base_url = http_base_url
         self._token_store = token_store
         self._auth_output = auth_output
+        self._notes_poll_seconds = notes_poll_seconds
         self._access_token: str | None = None
         # T-024: populated after we exchange the access token for /auth/me.
         # Exposed as a public attr so the presence rendering layer (T-018's
@@ -152,6 +157,12 @@ class BartlebyApp(App[None]):
         self.connection: HocuspocusConnection | None = None
         self._body_view: BodyEditor | None = None
         self._renderer_view: DocumentRenderer | None = None
+        # T-007 notes pane + its polling timer; T-018 status bar. Assigned in
+        # compose()/on_mount(); declared here so attribute access is typed and
+        # the connect_on_mount=False path has safe defaults.
+        self._notes_view: NotesList | None = None
+        self._notes_timer: Timer | None = None
+        self._status_bar: StatusBar | None = None
         # Snapshot of the last text we pushed into the TextArea. We use it
         # to suppress echoes when the YDoc->TextArea sync emits a Changed.
         self._last_applied_text: str = ""
@@ -185,8 +196,11 @@ class BartlebyApp(App[None]):
                 renderer = DocumentRenderer("", id="document")
                 self._renderer_view = renderer
                 yield renderer
-        # T-018 will wire connection state + presence into this bar.
-        yield Static("", id="status-bar")
+        # T-018: connection state + presence. on_status_change/on_awareness_change
+        # drive set_connected/set_peers on this widget.
+        status_bar = StatusBar(id="status-bar")
+        self._status_bar = status_bar
+        yield status_bar
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -246,6 +260,20 @@ class BartlebyApp(App[None]):
         if self.connection is not None:
             await self.connection.__aexit__(None, None, None)
             self.connection = None
+
+    # ----------------------------------------------------------- notes polling
+
+    async def _refresh_notes(self) -> None:
+        """Poll ``GET /notes`` and push the result into the notes pane (T-007).
+
+        No-ops when there is no HTTP base URL (Phase 0 / layout-only runs) or
+        before the notes pane has composed. ``set_notes`` diffs internally, so
+        an unchanged list leaves the user's selection untouched.
+        """
+        if self._http_base_url is None or self._notes_view is None:
+            return
+        notes = await fetch_notes(self._http_base_url, self._access_token)
+        self._notes_view.set_notes(notes)
 
     # --------------------------------------------------- connection -> status bar
 
