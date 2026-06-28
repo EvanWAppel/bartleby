@@ -176,6 +176,7 @@ Each task ships with a Playwright test asserting the behavior end-to-end against
 - [ ] **T-023** Export all (`:export-all`) writes zip to a chosen path. (test: zip contains expected files.)
 - [x] **T-024** Color: assign per-user colors at user creation server-side; TUI reads from `/auth/me` and applies to presence rendering. (test: two users have distinct colors.)
 - [ ] **T-025** Pygments-based syntax highlighting for code blocks. (test: a Python code block renders with expected token styles.)
+- [x] **T-026** Note navigation foundation: open a note from the list into the editor (Enter/click on a `#notes-pane` row → reconnect to room `note:<id>`, swap the YDoc, repaint). New task filed because nothing owned switching the editor off the single hardcoded room, yet T-008 (open top search result), T-010 (open on CRUD), and T-011 (backlink follow) all need it. (test: selecting a row switches `_doc_name` + the editor's document; reconnect path loads the room's existing content.) *(`BartlebyApp.open_note(note_id)` tears down the current Hocuspocus connection, makes a fresh YDoc, points `StructuredEditor.set_doc` at it, and reconnects when online; `_connect_room()` was extracted from `on_mount` so mount + open share one wiring. `NotesList.OptionSelected` (option id = note id, from T-007) routes through it. Local-mode tests (`connect_on_mount=False`) run in the sandbox; the live reconnect+load test is CI-gated like the other websocket integration tests.)*
 
 ---
 
