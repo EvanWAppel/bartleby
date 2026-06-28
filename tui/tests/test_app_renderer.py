@@ -1,34 +1,42 @@
-"""T-004 acceptance (app integration): the DocumentRenderer widget exists
-in the editor pane and re-renders whenever the YDoc prosemirror fragment
-changes.
+"""T-004 / T-006 acceptance (app integration): the document is rendered in the
+editor pane and re-renders whenever the YDoc prosemirror fragment changes.
 
 The pure-renderer unit tests in ``test_renderer.py`` already cover one
-snapshot per node type. These tests verify the widget is wired up to
-YDoc updates without breaking the existing TextArea-driven editing
-path.
+snapshot per node type. These tests verify the editor widget is wired up to
+YDoc updates. As of T-006 the editable ``StructuredEditor`` replaced the
+read-only ``DocumentRenderer``; it renders the same document (via the shared
+``render_document``) plus a caret, so these assertions now target ``#editor``.
 """
 
 from __future__ import annotations
 
 import pytest
 import y_py as Y
+from rich.console import Console
 
-from bartleby_tui.app import BartlebyApp, DocumentRenderer
+from bartleby_tui.app import BartlebyApp
+from bartleby_tui.editor import StructuredEditor
 
 pytestmark = pytest.mark.asyncio
 
 
-async def test_editor_pane_contains_document_renderer_widget() -> None:
+def _editor_plain_text(editor: StructuredEditor) -> str:
+    console = Console(file=None, width=120, record=True)
+    console.print(editor.content, end="")
+    return console.export_text(clear=True)
+
+
+async def test_editor_pane_contains_structured_editor() -> None:
     app = BartlebyApp(connect_on_mount=False)
     async with app.run_test() as pilot:
         await pilot.pause()
 
-        renderer = app.query_one("#document", DocumentRenderer)
-        assert renderer is not None
+        editor = app.query_one("#editor", StructuredEditor)
+        assert editor is not None
 
 
-async def test_renderer_updates_when_prosemirror_fragment_changes() -> None:
-    """Editing the YDoc's prosemirror fragment should re-render the widget."""
+async def test_editor_updates_when_prosemirror_fragment_changes() -> None:
+    """Editing the YDoc's prosemirror fragment should re-render the editor."""
     app = BartlebyApp(connect_on_mount=False)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -41,27 +49,18 @@ async def test_renderer_updates_when_prosemirror_fragment_changes() -> None:
             p = xml.push_xml_element(txn, "paragraph")
             p.push_xml_text(txn).push(txn, "from peer")
 
-        # Manually invoke the refresh path; T-004 plumbs this via the
-        # connection callback, but with connect_on_mount=False there is
-        # no connection — directly call to exercise widget wiring.
-        app._refresh_renderer()
+        # Manually invoke the refresh path; in the live app this is plumbed
+        # via the connection callback, but with connect_on_mount=False there
+        # is no connection — call directly to exercise the widget wiring.
+        editor = app.query_one("#editor", StructuredEditor)
+        editor.refresh_view()
         await pilot.pause()
 
-        renderer = app.query_one("#document", DocumentRenderer)
-        # Stringify the renderable to a flat str; we read .content (the
-        # original Rich renderable handed to Static.update).
-        from rich.console import Console
-
-        console = Console(file=None, width=120, record=True)
-        console.print(renderer.content, end="")
-        plain = console.export_text(clear=True)
-        assert "from peer" in plain
+        assert "from peer" in _editor_plain_text(editor)
 
 
 async def test_layout_test_still_finds_three_panes() -> None:
-    """T-001 layout invariant: the three named regions are still present
-    after T-004 added the DocumentRenderer inside #editor-pane.
-    """
+    """T-001 layout invariant: the three named regions are still present."""
     app = BartlebyApp(connect_on_mount=False)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -71,15 +70,15 @@ async def test_layout_test_still_finds_three_panes() -> None:
         assert app.query_one("#status-bar") is not None
 
 
-async def test_remote_prosemirror_update_repaints_renderer(
+async def test_remote_prosemirror_update_repaints_editor(
     hocuspocus_server: str,
 ) -> None:
-    """A remote peer mutating the prosemirror fragment should repaint
-    the TUI's renderer pane via the connection callback.
+    """A remote peer mutating the prosemirror fragment should repaint the
+    TUI's editor pane via the connection callback.
     """
     from bartleby_tui.connection import HocuspocusConnection
 
-    room = f"app-renderer-{id(object())}"
+    room = f"app-editor-{id(object())}"
     app = BartlebyApp(server_url=hocuspocus_server, doc_name=room)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -104,18 +103,10 @@ async def test_remote_prosemirror_update_repaints_renderer(
                 p = xml.push_xml_element(txn, "paragraph")
                 p.push_xml_text(txn).push(txn, "remote hi from prosemirror")
 
-            renderer = app.query_one("#document", DocumentRenderer)
-            from rich.console import Console
-
+            editor = app.query_one("#editor", StructuredEditor)
             for _ in range(50):
-                console = Console(file=None, width=120, record=True)
-                console.print(renderer.content, end="")
-                plain = console.export_text(clear=True)
-                if "remote hi from prosemirror" in plain:
+                if "remote hi from prosemirror" in _editor_plain_text(editor):
                     break
                 await pilot.pause(0.05)
 
-        console = Console(file=None, width=120, record=True)
-        console.print(renderer.content, end="")
-        plain = console.export_text(clear=True)
-        assert "remote hi from prosemirror" in plain
+        assert "remote hi from prosemirror" in _editor_plain_text(editor)

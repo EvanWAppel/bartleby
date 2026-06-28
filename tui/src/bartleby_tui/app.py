@@ -17,11 +17,11 @@ shape the rest of Workstream T will populate:
     +---------------------------------------------------+
 
 Each region carries a stable ``id`` attribute so later tasks (T-007 notes
-list, T-004 renderer) can target them without touching the skeleton. The
-Phase 0 editor (BodyEditor) lives inside ``#editor-pane`` so the existing
-live-collab behavior is preserved. T-018 replaces the status-bar
-placeholder with a real ``StatusBar`` widget driven by connection +
-awareness events.
+list) can target them without touching the skeleton. T-006's
+``StructuredEditor`` (``#editor``) lives inside ``#editor-pane`` and edits the
+``prosemirror`` fragment directly — it superseded the Phase 0 flat-text
+``BodyEditor`` + read-only ``DocumentRenderer`` pair. T-018 drives the
+``StatusBar`` (``#status-bar``) from connection + awareness events.
 """
 
 from __future__ import annotations
@@ -36,13 +36,14 @@ from textual.app import App, ComposeResult
 from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
-from textual.widgets import Footer, Header, Static, TextArea
+from textual.widgets import Footer, Header
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
+from bartleby_tui.editor import StructuredEditor
 from bartleby_tui.notes_api import fetch_notes
 from bartleby_tui.notes_list import NotesList
-from bartleby_tui.renderer import render_document, ydoc_to_blocks
+from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
 log = logging.getLogger(__name__)
@@ -52,43 +53,6 @@ DEFAULT_SERVER_URL = "ws://127.0.0.1:1234"
 # Spec target: list updates within 1s of a remote change. Poll at 1s so
 # steady-state lag is bounded by the spec. Tests inject a smaller value.
 DEFAULT_NOTES_POLL_SECONDS = 1.0
-
-
-class BodyEditor(TextArea):
-    """Plain editable surface bound to the YDoc body in V-008.
-
-    V-009+ swap this for a ProseMirror-equivalent renderer that handles
-    headings, lists, etc.; for now it's vanilla text.
-    """
-
-    DEFAULT_CSS = """
-    BodyEditor {
-        height: 1fr;
-        padding: 1 2;
-    }
-    """
-
-
-class DocumentRenderer(Static):
-    """T-004: read-only renderer for the ProseMirror-style document.
-
-    Subscribes (via the app) to the YDoc and repaints with the latest
-    ``render_document(ydoc_to_blocks(...))`` output on every change.
-
-    The editable ``BodyEditor`` (plain text on the ``body`` YText) still
-    drives writes for now (T-005 owns the editing primitives that mutate
-    the ``prosemirror`` XmlFragment). This widget exists so the rich
-    document content already arriving via collab from web peers is
-    visible in the TUI.
-    """
-
-    DEFAULT_CSS = """
-    DocumentRenderer {
-        height: auto;
-        padding: 1 2;
-        border-top: solid $primary;
-    }
-    """
 
 
 class BartlebyApp(App[None]):
@@ -155,29 +119,29 @@ class BartlebyApp(App[None]):
         self.user_info: UserInfo | None = None
         self._doc = Y.YDoc()
         self.connection: HocuspocusConnection | None = None
-        self._body_view: BodyEditor | None = None
-        self._renderer_view: DocumentRenderer | None = None
+        # T-006 structured editor (edits the prosemirror fragment in place).
+        self._editor: StructuredEditor | None = None
         # T-007 notes pane + its polling timer; T-018 status bar. Assigned in
         # compose()/on_mount(); declared here so attribute access is typed and
         # the connect_on_mount=False path has safe defaults.
         self._notes_view: NotesList | None = None
         self._notes_timer: Timer | None = None
         self._status_bar: StatusBar | None = None
-        # Snapshot of the last text we pushed into the TextArea. We use it
-        # to suppress echoes when the YDoc->TextArea sync emits a Changed.
-        self._last_applied_text: str = ""
 
     @property
     def body_text(self) -> str:
-        """Current value of the YDoc body — what would be exported as markdown."""
-        return str(self._doc.get_text("body"))
+        """Plain text of the document (concatenated leaf-block text).
+
+        Sourced from the ``prosemirror`` fragment the editor and web client
+        share. One line per leaf block.
+        """
+        blocks = ydoc_to_blocks(self._doc)
+        return "\n".join(_block_plain_text(b) for b in blocks)
 
     @property
     def rendered_body(self) -> str:
-        """Text currently displayed in the editor widget."""
-        if self._body_view is None:
-            return ""
-        return self._body_view.text
+        """Plain text currently represented by the document (no caret marker)."""
+        return self.body_text
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -190,12 +154,10 @@ class BartlebyApp(App[None]):
             self._notes_view = notes_view
             yield notes_view
             with Vertical(id="editor-pane"):
-                view = BodyEditor(text="", id="body", show_line_numbers=False)
-                self._body_view = view
-                yield view
-                renderer = DocumentRenderer("", id="document")
-                self._renderer_view = renderer
-                yield renderer
+                # T-006: structured editor over the prosemirror fragment.
+                editor = StructuredEditor(self._doc, id="editor")
+                self._editor = editor
+                yield editor
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -205,8 +167,8 @@ class BartlebyApp(App[None]):
 
     async def on_mount(self) -> None:
         if not self._connect_on_mount:
-            if self._body_view is not None:
-                self._body_view.focus()
+            if self._editor is not None:
+                self._editor.focus()
             return
 
         log.info("connecting to %s room=%s", self._server_url, self._doc_name)
@@ -236,10 +198,9 @@ class BartlebyApp(App[None]):
         self.connection.on_awareness_change(self._on_awareness_change)
         await self.connection.__aenter__()
         # Initial paint from server state if any arrived during sync.
-        self._refresh_from_doc()
-        self._refresh_renderer()
-        if self._body_view is not None:
-            self._body_view.focus()
+        if self._editor is not None:
+            self._editor.refresh_view()
+            self._editor.focus()
 
         # T-007: kick off the notes-list polling loop. We only poll when an
         # http_base_url is configured because the REST endpoint lives on the
@@ -293,66 +254,19 @@ class BartlebyApp(App[None]):
 
     def _on_doc_update(self, _update: bytes) -> None:
         # Listener is dispatched via loop.call_soon by the connection, so
-        # we're already outside the y-py callback context here.
-        self._refresh_from_doc()
-        self._refresh_renderer()
+        # we're already outside the y-py callback context here. The editor
+        # owns both reading and writing the prosemirror fragment, so a remote
+        # update just triggers a repaint (the caret is re-clamped to a valid
+        # position inside refresh_view).
+        if self._editor is not None:
+            self._editor.refresh_view()
 
-    def _refresh_from_doc(self) -> None:
-        """Pull the YDoc body into the TextArea only when safe to do so.
 
-        We deliberately *do not* overwrite the TextArea if the user has
-        actively edited it (i.e. its current text equals our last_applied
-        snapshot). Replacing a buffer mid-edit reaches into the wrong async
-        slot and causes empty Changed events to mask user input — see
-        commit history for the V-008 debugging session.
-
-        For the v1 vertical slice this means: a TUI that is currently being
-        edited won't auto-redraw to show a peer's late-arriving update. The
-        full prose-mirror-style merge belongs to a later task.
-        """
-        if self._body_view is None:
-            return
-        text = str(self._doc.get_text("body"))
-        view_text = self._body_view.text
-        if text == view_text:
-            return
-        if view_text != self._last_applied_text:
-            # User has typed since we last wrote — leave their buffer alone.
-            return
-        self._last_applied_text = text
-        self._body_view.load_text(text)
-
-    def _refresh_renderer(self) -> None:
-        """Repaint the DocumentRenderer pane from the YDoc's prosemirror fragment.
-
-        Safe to call any time after on_mount — it no-ops if the widget
-        hasn't been composed yet. Any failure walking the fragment
-        propagates per agents.md ("do not hide or wrap errors").
-        """
-        if self._renderer_view is None:
-            return
-        blocks = ydoc_to_blocks(self._doc)
-        self._renderer_view.update(render_document(blocks))
-
-    # ------------------------------------------------------------------ view -> YDoc
-
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
-        if event.text_area is not self._body_view:
-            return
-        new_text = event.text_area.text
-        if new_text == self._last_applied_text:
-            return
-        self._sync_to_doc(new_text)
-
-    def _sync_to_doc(self, new_text: str) -> None:
-        body = self._doc.get_text("body")
-        with self._doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
-            current_len = len(str(body))
-            if current_len > 0:
-                body.delete_range(txn, 0, current_len)
-            if new_text:
-                body.insert(txn, 0, new_text)
-        self._last_applied_text = new_text
+def _block_plain_text(block: Block) -> str:
+    """Concatenate a block's text, recursing into container children."""
+    if block.children:
+        return " ".join(_block_plain_text(child) for child in block.children)
+    return "".join(inline.text for inline in block.inlines)
 
 
 def main() -> None:
