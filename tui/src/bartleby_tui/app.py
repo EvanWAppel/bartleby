@@ -39,6 +39,7 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.timer import Timer
 from textual.widgets import Footer, Header, Input, OptionList
+from textual.widgets.option_list import Option
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
@@ -54,6 +55,19 @@ class SearchInput(Input):
 
     class Cancelled(Message):
         """Posted when the user presses Esc to dismiss the search box."""
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Cancelled())
+
+
+class TagPicker(OptionList):
+    """Pop-over list of tags in the notes pane. Esc cancels (T-009)."""
+
+    class Cancelled(Message):
+        """Posted when the user presses Esc to dismiss the tag picker."""
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "escape":
@@ -112,6 +126,17 @@ class BartlebyApp(App[None]):
         display: block;
     }
 
+    #tag-picker {
+        display: none;
+        height: auto;
+        max-height: 8;
+        border: round $primary;
+    }
+
+    #tag-picker.filtering {
+        display: block;
+    }
+
     #editor-pane {
         width: 1fr;
         padding: 0;
@@ -162,6 +187,9 @@ class BartlebyApp(App[None]):
         self._all_notes: list[Note] = []
         self._search_input: SearchInput | None = None
         self._searching: bool = False
+        # T-009 tag filter: the picker widget + the currently-applied tag.
+        self._tag_picker: TagPicker | None = None
+        self._active_tag: str | None = None
 
     @property
     def body_text(self) -> str:
@@ -190,6 +218,10 @@ class BartlebyApp(App[None]):
                 search_input = SearchInput(placeholder="search…", id="note-search")
                 self._search_input = search_input
                 yield search_input
+                # T-009: hidden until `t`; picks a tag to filter the list by.
+                tag_picker = TagPicker(id="tag-picker")
+                self._tag_picker = tag_picker
+                yield tag_picker
                 notes_view = NotesList(id="notes-pane")
                 self._notes_view = notes_view
                 yield notes_view
@@ -295,12 +327,17 @@ class BartlebyApp(App[None]):
             await self._connect_room()
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Open the selected note (Enter / click on a notes-list row)."""
-        if self._notes_view is None or event.option_list is not self._notes_view:
+        """Route a selection: a notes-list row opens a note; a tag-picker row
+        applies (or toggles off) that tag filter."""
+        if self._tag_picker is not None and event.option_list is self._tag_picker:
+            tag = event.option.id
+            if tag is not None:
+                self._apply_tag_filter(tag)
             return
-        note_id = event.option.id
-        if note_id is not None:
-            await self.open_note(note_id)
+        if self._notes_view is not None and event.option_list is self._notes_view:
+            note_id = event.option.id
+            if note_id is not None:
+                await self.open_note(note_id)
 
     # ----------------------------------------------------------- notes polling
 
@@ -317,8 +354,15 @@ class BartlebyApp(App[None]):
         self._all_notes = notes
         # While a search is on screen, leave the filtered view in place; the
         # cache above keeps the full list fresh for when the search closes.
-        if not self._searching:
+        if self._searching:
+            return
+        if self._active_tag is not None:
+            self._notes_view.set_notes(self._notes_for_tag(self._active_tag))
+        else:
             self._notes_view.set_notes(notes)
+
+    def _notes_for_tag(self, tag: str) -> list[Note]:
+        return [note for note in self._all_notes if tag in note.tags]
 
     # ---------------------------------------------------------------- T-008 search
 
@@ -376,6 +420,45 @@ class BartlebyApp(App[None]):
         self._close_search()
         if top is not None:
             await self.open_note(top.id)
+
+    # -------------------------------------------------------------- T-009 tag filter
+
+    def on_structured_editor_tag_filter_requested(
+        self, _message: StructuredEditor.TagFilterRequested
+    ) -> None:
+        """`t` in the editor's normal mode opens the tag picker."""
+        self._open_tag_filter()
+
+    def _open_tag_filter(self) -> None:
+        if self._tag_picker is None:
+            return
+        tags = sorted({tag for note in self._all_notes for tag in note.tags})
+        self._tag_picker.clear_options()
+        for tag in tags:
+            self._tag_picker.add_option(Option(tag, id=tag))
+        self._tag_picker.add_class("filtering")
+        self._tag_picker.focus()
+
+    def _apply_tag_filter(self, tag: str) -> None:
+        """Filter the list to ``tag``; selecting the active tag again clears it."""
+        if self._active_tag == tag:
+            self._active_tag = None
+        else:
+            self._active_tag = tag
+        if self._notes_view is not None:
+            visible = self._notes_for_tag(tag) if self._active_tag is not None else self._all_notes
+            self._notes_view.set_notes(visible)
+        self._close_tag_filter()
+
+    def on_tag_picker_cancelled(self, _message: TagPicker.Cancelled) -> None:
+        """Esc in the tag picker just dismisses it (keeps any active filter)."""
+        self._close_tag_filter()
+
+    def _close_tag_filter(self) -> None:
+        if self._tag_picker is not None:
+            self._tag_picker.remove_class("filtering")
+        if self._editor is not None:
+            self._editor.focus()
 
     # --------------------------------------------------- connection -> status bar
 

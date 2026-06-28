@@ -105,6 +105,9 @@ class StructuredEditor(Static):
     class SearchRequested(Message):
         """Posted when the user presses ``/`` in normal mode (T-008 search)."""
 
+    class TagFilterRequested(Message):
+        """Posted when the user presses ``t`` in normal mode (T-009 tag filter)."""
+
     DEFAULT_CSS = """
     StructuredEditor {
         height: 1fr;
@@ -195,6 +198,10 @@ class StructuredEditor(Static):
             # vim-style search: only in normal mode, so insert-mode `/` stays
             # a literal slash. The app owns the search UI.
             self.post_message(self.SearchRequested())
+        elif key == "t":
+            # Tag filter picker (T-009); normal mode only so insert-mode `t`
+            # types a literal "t". The app owns the picker UI.
+            self.post_message(self.TagFilterRequested())
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
