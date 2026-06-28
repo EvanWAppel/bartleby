@@ -44,7 +44,16 @@ from textual.widgets.option_list import Option
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
-from bartleby_tui.notes_api import Note, fetch_notes, search_notes
+from bartleby_tui.modals import ConfirmModal, RenameModal
+from bartleby_tui.notes_api import (
+    Note,
+    create_note,
+    delete_note,
+    fetch_notes,
+    rename_note,
+    restore_note,
+    search_notes,
+)
 from bartleby_tui.notes_list import NotesList
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
@@ -190,6 +199,8 @@ class BartlebyApp(App[None]):
         # T-009 tag filter: the picker widget + the currently-applied tag.
         self._tag_picker: TagPicker | None = None
         self._active_tag: str | None = None
+        # T-010 CRUD: last soft-deleted note id, so `R` can restore it.
+        self._last_deleted: str | None = None
 
     @property
     def body_text(self) -> str:
@@ -459,6 +470,82 @@ class BartlebyApp(App[None]):
             self._tag_picker.remove_class("filtering")
         if self._editor is not None:
             self._editor.focus()
+
+    # ------------------------------------------------------------------ T-010 CRUD
+
+    def _current_note_id(self) -> str | None:
+        """The note id the editor is on, parsed from the ``note:<id>`` room."""
+        prefix = "note:"
+        if self._doc_name.startswith(prefix):
+            return self._doc_name[len(prefix) :]
+        return None
+
+    def _title_of(self, note_id: str) -> str:
+        for note in self._all_notes:
+            if note.id == note_id:
+                return note.title
+        return ""
+
+    async def on_structured_editor_new_note_requested(
+        self, _message: StructuredEditor.NewNoteRequested
+    ) -> None:
+        """`n`: create a note and open it."""
+        if self._http_base_url is None:
+            return
+        note_id = await create_note(self._http_base_url, "Untitled", self._access_token)
+        await self._refresh_notes()
+        await self.open_note(note_id)
+
+    def on_structured_editor_rename_requested(
+        self, _message: StructuredEditor.RenameRequested
+    ) -> None:
+        """`r`: prompt for a new title and PATCH the current note."""
+        note_id = self._current_note_id()
+        if note_id is None or self._http_base_url is None:
+            return
+
+        def _apply(new_title: str | None) -> None:
+            if new_title:
+                self.run_worker(self._rename_and_refresh(note_id, new_title))
+
+        self.push_screen(RenameModal(self._title_of(note_id)), _apply)
+
+    async def _rename_and_refresh(self, note_id: str, title: str) -> None:
+        assert self._http_base_url is not None
+        await rename_note(self._http_base_url, note_id, title, self._access_token)
+        await self._refresh_notes()
+
+    def on_structured_editor_delete_requested(
+        self, _message: StructuredEditor.DeleteRequested
+    ) -> None:
+        """`d`: confirm, then soft-delete the current note (remember it for `R`)."""
+        note_id = self._current_note_id()
+        if note_id is None or self._http_base_url is None:
+            return
+
+        def _confirm(ok: bool | None) -> None:
+            if ok:
+                self.run_worker(self._delete_and_refresh(note_id))
+
+        self.push_screen(ConfirmModal("Delete this note?"), _confirm)
+
+    async def _delete_and_refresh(self, note_id: str) -> None:
+        assert self._http_base_url is not None
+        await delete_note(self._http_base_url, note_id, self._access_token)
+        self._last_deleted = note_id
+        await self._refresh_notes()
+
+    async def on_structured_editor_restore_requested(
+        self, _message: StructuredEditor.RestoreRequested
+    ) -> None:
+        """`R`: restore the most recently deleted note and reopen it."""
+        if self._last_deleted is None or self._http_base_url is None:
+            return
+        restored = self._last_deleted
+        await restore_note(self._http_base_url, restored, self._access_token)
+        self._last_deleted = None
+        await self._refresh_notes()
+        await self.open_note(restored)
 
     # --------------------------------------------------- connection -> status bar
 

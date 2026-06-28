@@ -71,6 +71,54 @@ async def search_notes(
     return ids
 
 
+async def create_note(
+    http_base_url: str, title: str = "Untitled", access_token: str | None = None
+) -> str:
+    """POST ``/notes`` with ``{title}`` (S-001); return the new note id."""
+    url = f"{http_base_url.rstrip('/')}/notes"
+    data = await asyncio.to_thread(_request_json_sync, "POST", url, {"title": title}, access_token)
+    return _require_str(data, "id")
+
+
+async def rename_note(
+    http_base_url: str, note_id: str, title: str, access_token: str | None = None
+) -> None:
+    """PATCH ``/notes/:id`` with a new ``{title}`` (S-004)."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}"
+    await asyncio.to_thread(_request_json_sync, "PATCH", url, {"title": title}, access_token)
+
+
+async def delete_note(http_base_url: str, note_id: str, access_token: str | None = None) -> None:
+    """DELETE ``/notes/:id`` — soft-delete into the trash (S-005)."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}"
+    await asyncio.to_thread(_request_json_sync, "DELETE", url, None, access_token)
+
+
+async def restore_note(http_base_url: str, note_id: str, access_token: str | None = None) -> None:
+    """POST ``/notes/:id/restore`` — clear ``trashed_at`` (S-006)."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/restore"
+    await asyncio.to_thread(_request_json_sync, "POST", url, None, access_token)
+
+
+def _request_json_sync(
+    method: str, url: str, body: dict[str, Any] | None, access_token: str | None
+) -> dict[str, Any]:
+    headers = {"accept": "application/json"}
+    payload: bytes | None = None
+    if body is not None:
+        payload = json.dumps(body).encode("utf-8")
+        headers["content-type"] = "application/json"
+    if access_token is not None:
+        headers["authorization"] = f"Bearer {access_token}"
+    req = urllib.request.Request(url, data=payload, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=10) as res:
+        raw = res.read().decode("utf-8")
+    if not raw:
+        return {}
+    decoded = json.loads(raw)
+    return decoded if isinstance(decoded, dict) else {}
+
+
 def _get_json_sync(url: str, access_token: str | None) -> dict[str, Any]:
     headers = {"accept": "application/json"}
     if access_token is not None:

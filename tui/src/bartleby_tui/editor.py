@@ -108,6 +108,18 @@ class StructuredEditor(Static):
     class TagFilterRequested(Message):
         """Posted when the user presses ``t`` in normal mode (T-009 tag filter)."""
 
+    class NewNoteRequested(Message):
+        """Posted on ``n`` in normal mode (T-010 new note)."""
+
+    class RenameRequested(Message):
+        """Posted on ``r`` in normal mode (T-010 rename current note)."""
+
+    class DeleteRequested(Message):
+        """Posted on ``d`` in normal mode (T-010 delete current note)."""
+
+    class RestoreRequested(Message):
+        """Posted on ``R`` in normal mode (T-010 restore last-deleted note)."""
+
     DEFAULT_CSS = """
     StructuredEditor {
         height: 1fr;
@@ -202,6 +214,14 @@ class StructuredEditor(Static):
             # Tag filter picker (T-009); normal mode only so insert-mode `t`
             # types a literal "t". The app owns the picker UI.
             self.post_message(self.TagFilterRequested())
+        elif key == "n":
+            self.post_message(self.NewNoteRequested())  # T-010 new note
+        elif key == "r":
+            self.post_message(self.RenameRequested())  # T-010 rename
+        elif key == "d":
+            self.post_message(self.DeleteRequested())  # T-010 delete
+        elif key == "R":  # Shift-R
+            self.post_message(self.RestoreRequested())  # T-010 restore
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
