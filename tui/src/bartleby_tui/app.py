@@ -337,6 +337,12 @@ class BartlebyApp(App[None]):
         if self._connect_on_mount:
             await self._connect_room()
 
+    async def on_structured_editor_backlink_follow_requested(
+        self, message: StructuredEditor.BacklinkFollowRequested
+    ) -> None:
+        """T-011: Enter over a `[[backlink]]` opens the linked note."""
+        await self.open_note(message.target_id)
+
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Route a selection: a notes-list row opens a note; a tag-picker row
         applies (or toggles off) that tag filter."""

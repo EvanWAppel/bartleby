@@ -120,6 +120,13 @@ class StructuredEditor(Static):
     class RestoreRequested(Message):
         """Posted on ``R`` in normal mode (T-010 restore last-deleted note)."""
 
+    class BacklinkFollowRequested(Message):
+        """Posted on Enter (normal mode) over a ``[[backlink]]`` (T-011 follow)."""
+
+        def __init__(self, target_id: str) -> None:
+            super().__init__()
+            self.target_id = target_id
+
     DEFAULT_CSS = """
     StructuredEditor {
         height: 1fr;
@@ -222,6 +229,11 @@ class StructuredEditor(Static):
             self.post_message(self.DeleteRequested())  # T-010 delete
         elif key == "R":  # Shift-R
             self.post_message(self.RestoreRequested())  # T-010 restore
+        elif key == "enter":
+            # T-011: Enter over a [[backlink]] follows it to the linked note.
+            target = self._backlink_near_caret()
+            if target is not None:
+                self.post_message(self.BacklinkFollowRequested(target))
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
@@ -312,6 +324,32 @@ class StructuredEditor(Static):
             self._caret_path = (top, 0)
         self._caret_offset = 0
         return True
+
+    def _backlink_near_caret(self) -> str | None:
+        """Target id of the backlink at/after the caret in the current leaf.
+
+        Caret offsets count text only; atoms are length 1 here purely to order
+        the candidates. Picks the first backlink at or after the caret, else
+        the last one in the block — so Enter anywhere on a line with a single
+        link follows it. Precise per-atom selection is a follow-up (it needs an
+        atom-aware caret, deferred with the `[[` picker).
+        """
+        blocks = ydoc_to_blocks(self._doc)
+        leaf = _block_at_path(blocks, self._caret_path)
+        if leaf is None:
+            return None
+        pos = 0
+        candidates: list[tuple[int, str]] = []
+        for inline in leaf.inlines:
+            if inline.atom_kind == "backlink" and inline.target_id:
+                candidates.append((pos, inline.target_id))
+            pos += len(inline.text) if inline.atom_kind is None else 1
+        if not candidates:
+            return None
+        for start, target in candidates:
+            if start >= self._caret_offset:
+                return target
+        return candidates[-1][1]
 
     def _toggle_mark(self, mark: str, *, href: str | None = None) -> None:
         blocks = ydoc_to_blocks(self._doc)
