@@ -17,6 +17,7 @@ import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,29 @@ async def fetch_notes(http_base_url: str, access_token: str | None = None) -> li
     data = await asyncio.to_thread(_get_json_sync, url, access_token)
     raw_notes = _require_list(data, "notes")
     return [_parse_note(item) for item in raw_notes]
+
+
+async def search_notes(
+    http_base_url: str, query: str, access_token: str | None = None
+) -> list[str]:
+    """GET ``{base}/search?q=...`` and return matching note ids in rank order.
+
+    The server returns ``{"hits": [{id, title, snippet}, ...]}`` (S-011); we
+    keep only the ids and let the caller back-fill display data from the
+    already-loaded notes list. An empty query returns ``[]`` without a request.
+    """
+    if not query:
+        return []
+    url = f"{http_base_url.rstrip('/')}/search?q={quote(query)}"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    hits = _require_list(data, "hits")
+    ids: list[str] = []
+    for hit in hits:
+        if isinstance(hit, dict):
+            hit_id = cast("Mapping[str, object]", hit).get("id")
+            if isinstance(hit_id, str):
+                ids.append(hit_id)
+    return ids
 
 
 def _get_json_sync(url: str, access_token: str | None) -> dict[str, Any]:
