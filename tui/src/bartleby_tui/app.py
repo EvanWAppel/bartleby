@@ -254,9 +254,7 @@ class BartlebyApp(App[None]):
         if self._connect_on_mount:
             await self._connect_room()
 
-    async def on_option_list_option_selected(
-        self, event: OptionList.OptionSelected
-    ) -> None:
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Open the selected note (Enter / click on a notes-list row)."""
         if self._notes_view is None or event.option_list is not self._notes_view:
             return
