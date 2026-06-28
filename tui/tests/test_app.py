@@ -36,8 +36,12 @@ async def test_widget_renders_after_remote_update(hocuspocus_server: str) -> Non
             document=remote_doc,
         ) as remote:
             await asyncio.wait_for(remote.wait_synced(), timeout=5.0)
+            # T-006: content lives in the prosemirror fragment now, not the
+            # old flat `body` YText. The app's editor renders that fragment.
+            xml = remote_doc.get_xml_element("prosemirror")
             with remote_doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
-                remote_doc.get_text("body").insert(txn, 0, "remote says hi")
+                p = xml.push_xml_element(txn, "paragraph")
+                p.push_xml_text(txn).push(txn, "remote says hi")
 
             # Wait for the change to reach the app and rerender.
             for _ in range(50):

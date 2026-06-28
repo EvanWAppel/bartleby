@@ -206,3 +206,45 @@ def test_toggle_task_emits_op() -> None:
     updates = _capture_updates(doc)
     editing.toggle_task(doc, 0, 0)
     assert len(updates) == 1
+
+
+# ----------------------------------------------------------- wrap_in_blockquote
+
+
+def test_wrap_in_blockquote_nests_paragraph() -> None:
+    doc = _new_doc(("paragraph", "quote me"))
+    editing.wrap_in_blockquote(doc, 0)
+    bq = ydoc_to_blocks(doc)[0]
+    assert bq.kind == "blockquote"
+    assert bq.children and bq.children[0].kind == "paragraph"
+    assert "".join(i.text for i in bq.children[0].inlines) == "quote me"
+
+
+# ------------------------------------------------- nested (path) addressing
+
+
+def test_insert_text_at_nested_path() -> None:
+    """Path addressing lets the editor type inside a list item's paragraph."""
+    doc = _new_doc(("paragraph", "item"))
+    editing.wrap_in_list(doc, 0, "bullet_list")
+    # bullet_list[0] -> list_item[0] -> paragraph[0]
+    editing.insert_text(doc, (0, 0, 0), 4, "!")
+    leaf = ydoc_to_blocks(doc)[0].children[0].children[0]
+    assert "".join(i.text for i in leaf.inlines) == "item!"
+
+
+def test_toggle_mark_at_nested_path() -> None:
+    doc = _new_doc(("paragraph", "bold"))
+    editing.wrap_in_list(doc, 0, "bullet_list")
+    editing.toggle_mark(doc, (0, 0, 0), 0, 4, "strong")
+    leaf = ydoc_to_blocks(doc)[0].children[0].children[0]
+    assert any("strong" in i.marks for i in leaf.inlines)
+
+
+def test_delete_range_at_nested_path() -> None:
+    doc = _new_doc(("paragraph", "abcdef"))
+    editing.wrap_in_blockquote(doc, 0)
+    # blockquote[0] -> paragraph[0]
+    editing.delete_range(doc, (0, 0), 0, 3)
+    leaf = ydoc_to_blocks(doc)[0].children[0]
+    assert "".join(i.text for i in leaf.inlines) == "def"

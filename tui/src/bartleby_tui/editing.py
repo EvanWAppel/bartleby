@@ -76,6 +76,25 @@ def _child_count(node: Any) -> int:
     return count
 
 
+# A block reference is either a top-level index (int) or a path of child
+# indices from the fragment root down to a nested leaf (e.g. ``(0, 0, 0)``
+# for list → list_item → paragraph). The structural primitives
+# (set_block_type / wrap_*) only operate on top-level blocks and take an int;
+# the text/mark primitives accept either so the editor caret can edit text
+# inside list items and blockquotes.
+BlockRef = int | tuple[int, ...]
+
+
+def _resolve_block(root: Any, ref: BlockRef) -> Any:
+    """Resolve a top-level index or a child-index path to its XML node."""
+    if isinstance(ref, int):
+        return _child_at(root, ref)
+    node = root
+    for index in ref:
+        node = _child_at(node, index)
+    return node
+
+
 def _read_segments(block: Any) -> list[dict[str, Any]]:
     """Read a leaf block's inline content as an ordered list of segments.
 
@@ -129,7 +148,7 @@ def _emit_segments(txn: Any, block: Any, segs: list[dict[str, Any]]) -> None:
 
 def insert_text(
     doc: Y.YDoc,
-    block_index: int,
+    block_index: BlockRef,
     offset: int,
     text: str,
     *,
@@ -137,12 +156,13 @@ def insert_text(
 ) -> None:
     """Insert ``text`` at character ``offset`` within the block at ``block_index``.
 
-    Inserts incrementally into the existing text run that spans the offset,
-    so the op is a real Yjs text insertion (preserves run identity and
-    round-trips to web peers). If no text run covers the offset (e.g. an
+    ``block_index`` is a top-level index or a child-index path to a nested
+    leaf. Inserts incrementally into the existing text run that spans the
+    offset, so the op is a real Yjs text insertion (preserves run identity
+    and round-trips to web peers). If no text run covers the offset (e.g. an
     empty block), a new run is appended.
     """
-    block = _child_at(_fragment(doc, fragment_name), block_index)
+    block = _resolve_block(_fragment(doc, fragment_name), block_index)
     target = None
     local = 0
     pos = 0
@@ -171,7 +191,7 @@ def insert_text(
 
 def delete_range(
     doc: Y.YDoc,
-    block_index: int,
+    block_index: BlockRef,
     start: int,
     end: int,
     *,
@@ -179,12 +199,13 @@ def delete_range(
 ) -> None:
     """Delete characters ``[start, end)`` within the block at ``block_index``.
 
-    Spans multiple text runs as needed. Inline atom nodes are skipped (their
-    removal belongs to a dedicated op, not a character-range delete).
+    ``block_index`` is a top-level index or a child-index path. Spans multiple
+    text runs as needed. Inline atom nodes are skipped (their removal belongs
+    to a dedicated op, not a character-range delete).
     """
     if end <= start:
         return
-    block = _child_at(_fragment(doc, fragment_name), block_index)
+    block = _resolve_block(_fragment(doc, fragment_name), block_index)
     ops: list[tuple[Any, int, int]] = []
     pos = 0
     child = block.first_child
@@ -297,7 +318,7 @@ def _apply_mark(
 
 def toggle_mark(
     doc: Y.YDoc,
-    block_index: int,
+    block_index: BlockRef,
     start: int,
     end: int,
     mark: str,
@@ -307,16 +328,17 @@ def toggle_mark(
 ) -> None:
     """Toggle inline ``mark`` over ``[start, end)`` in the block at ``block_index``.
 
-    If the whole range already carries the mark it is removed, otherwise it
-    is added. Re-segments the block's inline runs (see module docstring on
-    the y-py mark representation). For ``mark == "link"`` pass ``href`` to
-    store the URL; other marks are presence-only.
+    ``block_index`` is a top-level index or a child-index path. If the whole
+    range already carries the mark it is removed, otherwise it is added.
+    Re-segments the block's inline runs (see module docstring on the y-py
+    mark representation). For ``mark == "link"`` pass ``href`` to store the
+    URL; other marks are presence-only.
     """
     if mark not in MARKS:
         raise ValueError(f"unknown mark {mark!r}; expected one of {MARKS}")
     if end <= start:
         return
-    block = _child_at(_fragment(doc, fragment_name), block_index)
+    block = _resolve_block(_fragment(doc, fragment_name), block_index)
     segs = _read_segments(block)
     already = _range_fully_marked(segs, start, end, mark)
     value = href if mark == "link" and href is not None else "true"
@@ -387,6 +409,32 @@ def wrap_in_list(
         if item_kind == "task_item":
             item.set_attribute(txn, "checked", "false")
         inner = item.push_xml_element(txn, inner_kind)
+        _emit_segments(txn, inner, segs)
+        root.delete(txn, block_index + 1, 1)
+
+
+# ------------------------------------------------------------- wrap_in_blockquote
+
+
+def wrap_in_blockquote(
+    doc: Y.YDoc,
+    block_index: int,
+    *,
+    fragment_name: str = "prosemirror",
+) -> None:
+    """Wrap the top-level block at ``block_index`` in a ``blockquote``.
+
+    The block's inline content is moved into ``blockquote`` > (original block
+    kind), matching the ProseMirror schema (blockquote contains block-level
+    children). Drives the ``> `` keybind in T-006.
+    """
+    root = _fragment(doc, fragment_name)
+    block = _child_at(root, block_index)
+    inner_kind = block.name
+    segs = _read_segments(block)
+    with doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
+        bq = root.insert_xml_element(txn, block_index, "blockquote")
+        inner = bq.push_xml_element(txn, inner_kind)
         _emit_segments(txn, inner, segs)
         root.delete(txn, block_index + 1, 1)
 
