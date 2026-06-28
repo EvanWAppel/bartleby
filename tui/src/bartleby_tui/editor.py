@@ -133,6 +133,19 @@ class StructuredEditor(Static):
     def caret(self) -> tuple[tuple[int, ...], int]:
         return (self._caret_path, self._caret_offset)
 
+    def set_doc(self, doc: Y.YDoc) -> None:
+        """Point the editor at a different YDoc (used when opening a note).
+
+        Resets the caret to the document start and repaints. The caller owns
+        the connection lifecycle; this only swaps what the widget edits.
+        """
+        self._doc = doc
+        self._caret_path = (0,)
+        self._caret_offset = 0
+        self._link_buffer = None
+        self._ensure_block_exists()
+        self.refresh_view()
+
     def refresh_view(self) -> None:
         """Repaint from the YDoc, overlaying the caret and a mode line."""
         blocks = ydoc_to_blocks(self._doc)

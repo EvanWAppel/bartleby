@@ -36,7 +36,7 @@ from textual.app import App, ComposeResult
 from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, OptionList
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
@@ -187,19 +187,8 @@ class BartlebyApp(App[None]):
                 self.user_info.display_name,
                 self.user_info.color,
             )
-        self.connection = HocuspocusConnection(
-            url=self._server_url,
-            doc_name=self._doc_name,
-            document=self._doc,
-            bearer_token=self._access_token,
-        )
-        self.connection.on_document_update(self._on_doc_update)
-        self.connection.on_status_change(self._on_status_change)
-        self.connection.on_awareness_change(self._on_awareness_change)
-        await self.connection.__aenter__()
-        # Initial paint from server state if any arrived during sync.
+        await self._connect_room()
         if self._editor is not None:
-            self._editor.refresh_view()
             self._editor.focus()
 
         # T-007: kick off the notes-list polling loop. We only poll when an
@@ -221,6 +210,57 @@ class BartlebyApp(App[None]):
         if self.connection is not None:
             await self.connection.__aexit__(None, None, None)
             self.connection = None
+
+    # ------------------------------------------------------------ note navigation
+
+    async def _connect_room(self) -> None:
+        """Open a Hocuspocus connection to the current ``_doc_name`` + ``_doc``.
+
+        Shared by initial mount and ``open_note`` so opening a note reuses the
+        exact same wiring (document-update, status, awareness callbacks).
+        """
+        log.info("connecting to %s room=%s", self._server_url, self._doc_name)
+        self.connection = HocuspocusConnection(
+            url=self._server_url,
+            doc_name=self._doc_name,
+            document=self._doc,
+            bearer_token=self._access_token,
+        )
+        self.connection.on_document_update(self._on_doc_update)
+        self.connection.on_status_change(self._on_status_change)
+        self.connection.on_awareness_change(self._on_awareness_change)
+        await self.connection.__aenter__()
+        # Paint whatever server state arrived during the sync handshake.
+        if self._editor is not None:
+            self._editor.refresh_view()
+
+    async def open_note(self, note_id: str) -> None:
+        """Switch the editor to note ``note_id`` (Hocuspocus room ``note:<id>``).
+
+        Tears down the current room's connection, swaps in a fresh YDoc, points
+        the editor at it, and (when online) reconnects to the new room. A no-op
+        if we're already on that note.
+        """
+        doc_name = f"note:{note_id}"
+        if doc_name == self._doc_name:
+            return
+        if self.connection is not None:
+            await self.connection.__aexit__(None, None, None)
+            self.connection = None
+        self._doc = Y.YDoc()
+        self._doc_name = doc_name
+        if self._editor is not None:
+            self._editor.set_doc(self._doc)
+        if self._connect_on_mount:
+            await self._connect_room()
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Open the selected note (Enter / click on a notes-list row)."""
+        if self._notes_view is None or event.option_list is not self._notes_view:
+            return
+        note_id = event.option.id
+        if note_id is not None:
+            await self.open_note(note_id)
 
     # ----------------------------------------------------------- notes polling
 
