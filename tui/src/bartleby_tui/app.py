@@ -32,19 +32,35 @@ import sys
 from typing import Any, ClassVar, TextIO
 
 import y_py as Y
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.timer import Timer
-from textual.widgets import Footer, Header, OptionList
+from textual.widgets import Footer, Header, Input, OptionList
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
-from bartleby_tui.notes_api import fetch_notes
+from bartleby_tui.notes_api import Note, fetch_notes, search_notes
 from bartleby_tui.notes_list import NotesList
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
+
+
+class SearchInput(Input):
+    """Search box in the notes pane. Esc cancels (T-008)."""
+
+    class Cancelled(Message):
+        """Posted when the user presses Esc to dismiss the search box."""
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Cancelled())
+
 
 log = logging.getLogger(__name__)
 
@@ -75,11 +91,25 @@ class BartlebyApp(App[None]):
         height: 1fr;
     }
 
-    #notes-pane {
+    #notes-col {
         width: 24;
         min-width: 16;
         border-right: solid $primary;
         padding: 1;
+    }
+
+    #notes-pane {
+        height: 1fr;
+        padding: 0;
+    }
+
+    #note-search {
+        display: none;
+        height: 3;
+    }
+
+    #note-search.searching {
+        display: block;
     }
 
     #editor-pane {
@@ -127,6 +157,11 @@ class BartlebyApp(App[None]):
         self._notes_view: NotesList | None = None
         self._notes_timer: Timer | None = None
         self._status_bar: StatusBar | None = None
+        # T-008 search: the full polled list (cache to restore after a search)
+        # + the search box + whether we're currently showing search results.
+        self._all_notes: list[Note] = []
+        self._search_input: SearchInput | None = None
+        self._searching: bool = False
 
     @property
     def body_text(self) -> str:
@@ -150,9 +185,14 @@ class BartlebyApp(App[None]):
             # http_base_url is configured. When no http_base_url is set
             # (layout-only tests / Phase 0 fallback) the widget renders
             # an empty list and stays inert.
-            notes_view = NotesList(id="notes-pane")
-            self._notes_view = notes_view
-            yield notes_view
+            with Vertical(id="notes-col"):
+                # T-008: hidden until `/`; filters the list via GET /search.
+                search_input = SearchInput(placeholder="search…", id="note-search")
+                self._search_input = search_input
+                yield search_input
+                notes_view = NotesList(id="notes-pane")
+                self._notes_view = notes_view
+                yield notes_view
             with Vertical(id="editor-pane"):
                 # T-006: structured editor over the prosemirror fragment.
                 editor = StructuredEditor(self._doc, id="editor")
@@ -274,7 +314,68 @@ class BartlebyApp(App[None]):
         if self._http_base_url is None or self._notes_view is None:
             return
         notes = await fetch_notes(self._http_base_url, self._access_token)
-        self._notes_view.set_notes(notes)
+        self._all_notes = notes
+        # While a search is on screen, leave the filtered view in place; the
+        # cache above keeps the full list fresh for when the search closes.
+        if not self._searching:
+            self._notes_view.set_notes(notes)
+
+    # ---------------------------------------------------------------- T-008 search
+
+    def on_structured_editor_search_requested(
+        self, _message: StructuredEditor.SearchRequested
+    ) -> None:
+        """`/` in the editor's normal mode opens the search box."""
+        self._open_search()
+
+    def _open_search(self) -> None:
+        if self._search_input is None:
+            return
+        self._searching = True
+        self._search_input.add_class("searching")
+        self._search_input.value = ""
+        self._search_input.focus()
+
+    def on_search_input_cancelled(self, _message: SearchInput.Cancelled) -> None:
+        """Esc in the search box: restore the full list and refocus the editor."""
+        self._close_search()
+
+    def _close_search(self) -> None:
+        if self._search_input is not None:
+            self._search_input.remove_class("searching")
+            self._search_input.value = ""
+        self._searching = False
+        if self._notes_view is not None:
+            self._notes_view.set_notes(self._all_notes)
+        if self._editor is not None:
+            self._editor.focus()
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input is not self._search_input:
+            return
+        await self._run_search(event.value)
+
+    async def _run_search(self, query: str) -> None:
+        """Filter the notes list to GET /search hits (back-filled from cache)."""
+        if self._notes_view is None:
+            return
+        if not query or self._http_base_url is None:
+            self._notes_view.set_notes(self._all_notes if not query else [])
+            return
+        hit_ids = await search_notes(self._http_base_url, query, self._access_token)
+        by_id = {note.id: note for note in self._all_notes}
+        # Preserve the server's relevance order; drop hits we have no row for.
+        results = [by_id[hid] for hid in hit_ids if hid in by_id]
+        self._notes_view.set_notes(results)
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter in the search box opens the top result."""
+        if event.input is not self._search_input:
+            return
+        top = self._notes_view.notes[0] if self._notes_view and self._notes_view.notes else None
+        self._close_search()
+        if top is not None:
+            await self.open_note(top.id)
 
     # --------------------------------------------------- connection -> status bar
 

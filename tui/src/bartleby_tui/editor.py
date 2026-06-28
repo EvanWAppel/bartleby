@@ -39,6 +39,7 @@ import y_py as Y
 from rich.console import Group
 from rich.text import Text
 from textual import events
+from textual.message import Message
 from textual.widgets import Static
 
 from bartleby_tui import editing
@@ -100,6 +101,9 @@ class StructuredEditor(Static):
     """Editable, caret-bearing view over a YDoc's ``prosemirror`` fragment."""
 
     can_focus = True
+
+    class SearchRequested(Message):
+        """Posted when the user presses ``/`` in normal mode (T-008 search)."""
 
     DEFAULT_CSS = """
     StructuredEditor {
@@ -187,6 +191,10 @@ class StructuredEditor(Static):
         key = event.key
         if key == "i":
             self._mode = MODE_INSERT
+        elif key == "slash":
+            # vim-style search: only in normal mode, so insert-mode `/` stays
+            # a literal slash. The app owns the search UI.
+            self.post_message(self.SearchRequested())
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
