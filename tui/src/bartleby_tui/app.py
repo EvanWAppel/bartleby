@@ -926,10 +926,11 @@ class BartlebyApp(App[None]):
     # --------------------------------------------------- connection -> status bar
 
     def _on_status_change(self, connected: bool) -> None:
-        """Forward WS connect/disconnect transitions to the status bar."""
+        """Forward WS connect/disconnect + the offline pending count (T-019)."""
         if self._status_bar is None:
             return
-        self._status_bar.set_connected(connected)
+        pending = self.connection.pending if self.connection is not None else 0
+        self._status_bar.set_connected(connected, pending=pending)
 
     def _on_awareness_change(self, peers: dict[int, dict[str, Any]]) -> None:
         """Forward peer-awareness updates to the status bar's presence section."""

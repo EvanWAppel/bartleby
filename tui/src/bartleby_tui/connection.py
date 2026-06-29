@@ -90,6 +90,14 @@ class HocuspocusConnection:
         self._status_listeners: list[StatusListener] = []
         self._awareness_listeners: list[AwarenessListener] = []
         self._connected: bool = False
+        # T-019: count of local updates produced while offline that the
+        # transport couldn't send. Reset to 0 once we reconnect (the sync
+        # handshake carries those ops to the server). Surfaced via `pending`
+        # so the status bar can show "offline — N pending".
+        self._pending: int = 0
+        # T-019: set while we're auto-reconnecting after an unexpected drop,
+        # so we don't stack reconnect loops.
+        self._reconnecting: bool = False
         # Full awareness table keyed by client_id (includes us). We track
         # the per-client clock so out-of-order frames are dropped per the
         # y-protocols/awareness contract.
@@ -106,6 +114,11 @@ class HocuspocusConnection:
     @property
     def is_synced(self) -> bool:
         return self._synced.is_set()
+
+    @property
+    def pending(self) -> int:
+        """Local edits made while offline that haven't synced yet (T-019)."""
+        return self._pending
 
     @property
     def is_connected(self) -> bool:
@@ -179,13 +192,22 @@ class HocuspocusConnection:
         self._spawn(loop, self._send_awareness())
 
     async def __aenter__(self) -> Self:
+        # Subscribe to local YDoc updates so we forward them to the server.
+        self._sub_handle = self.document.observe_after_transaction(self._on_local_transaction)
+        await self._open_and_start()
+        return self
+
+    async def _open_and_start(self) -> None:
+        """Open the WebSocket, run the sync handshake, start the recv loop.
+
+        Shared by the initial connect and T-019 auto-reconnect so a reconnect
+        re-runs the exact same handshake. ``pending`` resets here because the
+        handshake propagates any offline edits to the server.
+        """
         self._ws = await websockets.connect(f"{self.url}/{self.doc_name}")
         self._set_connected(True)
 
-        # Subscribe to local YDoc updates so we forward them to the server.
-        self._sub_handle = self.document.observe_after_transaction(self._on_local_transaction)
-
-        # Start receive loop.
+        # Start receive loop for this socket.
         self._recv_task = asyncio.create_task(self._recv_loop(), name="hocuspocus-recv")
 
         # Hocuspocus queues all incoming traffic until the client sends an Auth
@@ -195,7 +217,9 @@ class HocuspocusConnection:
         token = f"Bearer {self.bearer_token}" if self.bearer_token is not None else ""
         await self._ws.send(build_auth_token(self.doc_name, token))
 
-        # Kick off sync handshake.
+        # Kick off sync handshake. The server replies with its own SyncStep1,
+        # to which we answer SyncStep2 carrying everything it lacks — including
+        # any edits we made while offline — so the reconnect resolves itself.
         sv = Y.encode_state_vector(self.document)
         await self._ws.send(build_sync_step_1(self.doc_name, bytes(sv)))
 
@@ -203,7 +227,6 @@ class HocuspocusConnection:
         # immediately after (re)connecting.
         if self._local_state is not None:
             await self._send_awareness()
-        return self
 
     async def __aexit__(
         self,
@@ -239,6 +262,30 @@ class HocuspocusConnection:
         finally:
             # Transport is gone — flip our status flag so the UI can react.
             self._set_connected(False)
+            # T-019: if the drop wasn't an app-initiated shutdown, keep trying
+            # to reconnect; offline edits sync via the handshake on success.
+            if not self._closed.is_set() and not self._reconnecting:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    return
+                self._spawn(loop, self._reconnect())
+
+    async def _reconnect(self) -> None:
+        """Retry the connection with capped exponential backoff (T-019)."""
+        self._reconnecting = True
+        delay = 0.2
+        try:
+            while not self._closed.is_set():
+                try:
+                    await self._open_and_start()
+                    return
+                except OSError as exc:
+                    log.info("reconnect to %s failed (%s); retrying", self.doc_name, exc)
+                    await asyncio.sleep(min(delay, 5.0))
+                    delay *= 2
+        finally:
+            self._reconnecting = False
 
     async def _handle_frame(self, frame: bytes) -> None:
         parsed = parse_message(frame)
@@ -326,7 +373,13 @@ class HocuspocusConnection:
             log.warning("local transaction outside of running loop; dropping update")
             return
         loop.call_soon(self._notify_listeners, update)
-        self._spawn(loop, self._send_update(update))
+        if self._connected:
+            self._spawn(loop, self._send_update(update))
+        else:
+            # T-019: offline — the edit stays in the YDoc and will sync on
+            # reconnect; count it so the status bar shows "N pending".
+            self._pending += 1
+            loop.call_soon(self._notify_status)
 
     @staticmethod
     def _extract_update(event: object) -> bytes | None:
@@ -383,8 +436,20 @@ class HocuspocusConnection:
         if self._connected == value:
             return
         self._connected = value
+        if value:
+            # Reconnected — the handshake carries any offline edits, so the
+            # pending backlog is considered drained.
+            self._pending = 0
+        self._notify_status()
+
+    def _notify_status(self) -> None:
+        """Fire status listeners (connection state and/or `pending` changed).
+
+        Listeners receive only the connected flag; they read `pending`
+        off the connection when rendering (see BartlebyApp._on_status_change).
+        """
         for listener in list(self._status_listeners):
-            listener(value)
+            listener(self._connected)
 
     def _spawn(
         self,
