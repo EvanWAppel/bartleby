@@ -80,6 +80,22 @@ async def search_notes(
     return ids
 
 
+async def fetch_trash(http_base_url: str, access_token: str | None = None) -> list[Note]:
+    """GET ``/notes/trash`` (S-003); return the trashed notes."""
+    url = f"{http_base_url.rstrip('/')}/notes/trash"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    raw_notes = _require_list(data, "notes")
+    return [_parse_note(item) for item in raw_notes]
+
+
+async def delete_note_forever(
+    http_base_url: str, note_id: str, access_token: str | None = None
+) -> None:
+    """DELETE ``/notes/:id?forever=true`` — hard-delete a trashed note (S-005)."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}?forever=true"
+    await asyncio.to_thread(_request_json_sync, "DELETE", url, None, access_token)
+
+
 async def fetch_backlinks(
     http_base_url: str, note_id: str, access_token: str | None = None
 ) -> list[Backlink]:

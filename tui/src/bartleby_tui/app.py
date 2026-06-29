@@ -49,14 +49,16 @@ from bartleby_tui.notes_api import (
     Note,
     create_note,
     delete_note,
+    delete_note_forever,
     fetch_backlinks,
     fetch_notes,
+    fetch_trash,
     rename_note,
     restore_note,
     search_notes,
 )
 from bartleby_tui.notes_list import NotesList
-from bartleby_tui.panes import BacklinksPane
+from bartleby_tui.panes import BacklinksPane, TrashPane
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
@@ -170,6 +172,15 @@ class BartlebyApp(App[None]):
         padding: 0 0 1 0;
     }
 
+    #backlinks-pane, #trash-pane {
+        display: none;
+        height: 1fr;
+    }
+
+    #backlinks-pane.active, #trash-pane.active {
+        display: block;
+    }
+
     /* StatusBar carries its own DEFAULT_CSS; nothing to override here. */
     """
 
@@ -220,8 +231,10 @@ class BartlebyApp(App[None]):
         self._active_tag: str | None = None
         # T-010 CRUD: last soft-deleted note id, so `R` can restore it.
         self._last_deleted: str | None = None
-        # T-012 inbound-links pane (right side), toggled by `g b`.
+        # T-012/T-016 right-pane panes + which one is showing (None = hidden).
         self._backlinks_pane: BacklinksPane | None = None
+        self._trash_pane: TrashPane | None = None
+        self._active_pane: str | None = None
 
     @property
     def body_text(self) -> str:
@@ -265,10 +278,13 @@ class BartlebyApp(App[None]):
             # T-012: collapsible right pane (inbound links; comments/history join
             # it later). Hidden until a `g<key>` chord toggles it.
             with Vertical(id="right-pane"):
-                yield Label("Backlinks", id="right-pane-title")
+                yield Label("", id="right-pane-title")
                 backlinks_pane = BacklinksPane(id="backlinks-pane")
                 self._backlinks_pane = backlinks_pane
                 yield backlinks_pane
+                trash_pane = TrashPane(id="trash-pane")
+                self._trash_pane = trash_pane
+                yield trash_pane
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -375,32 +391,79 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
+    # `g<key>` → pane name. T-015/T-017 extend this map (h history, i inbox).
+    _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {"b": "backlinks", "t": "trash"}
+
     async def on_structured_editor_go_to_requested(
         self, message: StructuredEditor.GoToRequested
     ) -> None:
-        """Route a `g<key>` chord to its pane. T-012 owns `g b` (backlinks)."""
-        if message.target == "b":
-            await self._toggle_backlinks_pane()
+        """Route a `g<key>` chord to its right-pane (T-012 `g b`, T-016 `g t`)."""
+        pane = self._PANE_FOR_CHORD.get(message.target)
+        if pane is not None:
+            await self._toggle_pane(pane)
 
-    async def _toggle_backlinks_pane(self) -> None:
-        """Show/hide the inbound-links pane; populate it from the current note."""
-        if self._backlinks_pane is None:
-            return
+    async def _toggle_pane(self, name: str) -> None:
+        """Show ``name`` in the right pane (populating it), or hide if already shown."""
         right = self.query_one("#right-pane")
-        if right.has_class("visible"):
+        if self._active_pane == name and right.has_class("visible"):
             right.remove_class("visible")
+            self._active_pane = None
             if self._editor is not None:
                 self._editor.focus()
             return
-        note_id = self._current_note_id()
-        links = (
-            await fetch_backlinks(self._http_base_url, note_id, self._access_token)
-            if note_id is not None and self._http_base_url is not None
+
+        active = await self._populate_pane(name)
+        if active is None:
+            return
+        for pane_id in ("#backlinks-pane", "#trash-pane"):
+            self.query_one(pane_id).set_class(pane_id == f"#{name}-pane", "active")
+        self.query_one("#right-pane-title", Label).update(name.capitalize())
+        right.add_class("visible")
+        self._active_pane = name
+        active.focus()
+
+    async def _populate_pane(self, name: str) -> OptionList | None:
+        """Fetch + load the named pane's data; return the widget to focus."""
+        if name == "backlinks" and self._backlinks_pane is not None:
+            note_id = self._current_note_id()
+            links = (
+                await fetch_backlinks(self._http_base_url, note_id, self._access_token)
+                if note_id is not None and self._http_base_url is not None
+                else []
+            )
+            self._backlinks_pane.set_backlinks(links)
+            return self._backlinks_pane
+        if name == "trash" and self._trash_pane is not None:
+            await self._refresh_trash()
+            return self._trash_pane
+        return None
+
+    async def _refresh_trash(self) -> None:
+        if self._trash_pane is None:
+            return
+        notes = (
+            await fetch_trash(self._http_base_url, self._access_token)
+            if self._http_base_url is not None
             else []
         )
-        self._backlinks_pane.set_backlinks(links)
-        right.add_class("visible")
-        self._backlinks_pane.focus()
+        self._trash_pane.set_notes(notes)
+
+    async def on_trash_pane_restore_requested(self, message: TrashPane.RestoreRequested) -> None:
+        """`R` in the trash pane restores the note (T-016 / upgrades `R`)."""
+        if self._http_base_url is None:
+            return
+        await restore_note(self._http_base_url, message.note_id, self._access_token)
+        await self._refresh_trash()
+        await self._refresh_notes()
+
+    async def on_trash_pane_delete_forever_requested(
+        self, message: TrashPane.DeleteForeverRequested
+    ) -> None:
+        """`D` in the trash pane hard-deletes the note."""
+        if self._http_base_url is None:
+            return
+        await delete_note_forever(self._http_base_url, message.note_id, self._access_token)
+        await self._refresh_trash()
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Route a selection: a notes-list row or backlink row opens a note;
