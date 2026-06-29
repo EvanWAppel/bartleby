@@ -44,25 +44,35 @@ from textual.widgets.option_list import Option
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
-from bartleby_tui.modals import ConfirmModal, HelpModal, RenameModal
+from bartleby_tui.modals import ConfirmModal, HelpModal, RenameModal, TextInputModal
 from bartleby_tui.notes_api import (
     Note,
+    create_comment,
     create_note,
     delete_note,
     delete_note_forever,
     fetch_backlinks,
+    fetch_comments,
     fetch_mentions,
     fetch_notes,
     fetch_snapshots,
     fetch_trash,
     mark_mention_read,
     rename_note,
+    reply_comment,
+    resolve_comment,
     restore_note,
     restore_snapshot,
     search_notes,
 )
 from bartleby_tui.notes_list import NotesList
-from bartleby_tui.panes import BacklinksPane, MentionsPane, SnapshotsPane, TrashPane
+from bartleby_tui.panes import (
+    BacklinksPane,
+    CommentsPane,
+    MentionsPane,
+    SnapshotsPane,
+    TrashPane,
+)
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
@@ -176,12 +186,13 @@ class BartlebyApp(App[None]):
         padding: 0 0 1 0;
     }
 
-    #backlinks-pane, #trash-pane, #inbox-pane, #history-pane {
+    #backlinks-pane, #trash-pane, #inbox-pane, #history-pane, #comments-pane {
         display: none;
         height: 1fr;
     }
 
-    #backlinks-pane.active, #trash-pane.active, #inbox-pane.active, #history-pane.active {
+    #backlinks-pane.active, #trash-pane.active, #inbox-pane.active,
+    #history-pane.active, #comments-pane.active {
         display: block;
     }
 
@@ -240,6 +251,7 @@ class BartlebyApp(App[None]):
         self._trash_pane: TrashPane | None = None
         self._mentions_pane: MentionsPane | None = None
         self._snapshots_pane: SnapshotsPane | None = None
+        self._comments_pane: CommentsPane | None = None
         self._active_pane: str | None = None
 
     @property
@@ -297,6 +309,9 @@ class BartlebyApp(App[None]):
                 snapshots_pane = SnapshotsPane(id="history-pane")
                 self._snapshots_pane = snapshots_pane
                 yield snapshots_pane
+                comments_pane = CommentsPane(id="comments-pane")
+                self._comments_pane = comments_pane
+                yield comments_pane
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -403,12 +418,13 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
-    # `g<key>` → pane name. (T-013 will add `c` comments.)
+    # `g<key>` → pane name.
     _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {
         "b": "backlinks",
         "t": "trash",
         "i": "inbox",
         "h": "history",
+        "c": "comments",
     }
     # CSS ids of the swappable right-pane panes (one is `.active` at a time).
     _PANE_IDS: ClassVar[tuple[str, ...]] = (
@@ -416,6 +432,7 @@ class BartlebyApp(App[None]):
         "#trash-pane",
         "#inbox-pane",
         "#history-pane",
+        "#comments-pane",
     )
 
     async def on_structured_editor_go_to_requested(
@@ -472,7 +489,21 @@ class BartlebyApp(App[None]):
             )
             self._snapshots_pane.set_snapshots(snaps)
             return self._snapshots_pane
+        if name == "comments" and self._comments_pane is not None:
+            await self._refresh_comments()
+            return self._comments_pane
         return None
+
+    async def _refresh_comments(self) -> None:
+        if self._comments_pane is None:
+            return
+        note_id = self._current_note_id()
+        comments = (
+            await fetch_comments(self._http_base_url, note_id, self._access_token)
+            if note_id is not None and self._http_base_url is not None
+            else []
+        )
+        self._comments_pane.set_comments(comments)
 
     async def _refresh_mentions(self) -> None:
         if self._mentions_pane is None:
@@ -565,6 +596,55 @@ class BartlebyApp(App[None]):
     async def _restore_snapshot(self, note_id: str, snapshot_id: str) -> None:
         assert self._http_base_url is not None
         await restore_snapshot(self._http_base_url, note_id, snapshot_id, self._access_token)
+
+    # ----------------------------------------------------------- T-013/T-014 comments
+
+    def on_comments_pane_new_comment_requested(
+        self, _message: CommentsPane.NewCommentRequested
+    ) -> None:
+        """`c`: compose a new top-level comment on the current note."""
+        note_id = self._current_note_id()
+        if note_id is None or self._http_base_url is None:
+            return
+
+        def _submit(body: str | None) -> None:
+            if body:
+                self.run_worker(self._create_comment(note_id, body))
+
+        self.push_screen(TextInputModal("New comment", "comment…"), _submit)
+
+    async def _create_comment(self, note_id: str, body: str) -> None:
+        assert self._http_base_url is not None
+        await create_comment(self._http_base_url, note_id, body, self._access_token)
+        await self._refresh_comments()
+
+    def on_comments_pane_reply_requested(self, message: CommentsPane.ReplyRequested) -> None:
+        """`r`: reply to the highlighted thread."""
+        if self._http_base_url is None:
+            return
+        comment_id = message.comment_id
+
+        def _submit(body: str | None) -> None:
+            if body:
+                self.run_worker(self._reply_comment(comment_id, body))
+
+        self.push_screen(TextInputModal("Reply", "reply…"), _submit)
+
+    async def _reply_comment(self, comment_id: str, body: str) -> None:
+        assert self._http_base_url is not None
+        await reply_comment(self._http_base_url, comment_id, body, self._access_token)
+        if self._comments_pane is not None:
+            self._comments_pane.expand(comment_id)  # show the new reply
+        await self._refresh_comments()
+
+    async def on_comments_pane_resolve_requested(
+        self, message: CommentsPane.ResolveRequested
+    ) -> None:
+        """`x`: resolve the highlighted thread."""
+        if self._http_base_url is None:
+            return
+        await resolve_comment(self._http_base_url, message.comment_id, self._access_token)
+        await self._refresh_comments()
 
     # ----------------------------------------------------------- notes polling
 
