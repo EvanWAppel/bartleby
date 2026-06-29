@@ -44,7 +44,13 @@ from textual.widgets.option_list import Option
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
-from bartleby_tui.modals import ConfirmModal, HelpModal, RenameModal, TextInputModal
+from bartleby_tui.modals import (
+    CommandPalette,
+    ConfirmModal,
+    HelpModal,
+    RenameModal,
+    TextInputModal,
+)
 from bartleby_tui.notes_api import (
     Note,
     create_comment,
@@ -418,6 +424,37 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
+    # Palette commands (entry id → label). Notes are appended dynamically.
+    _PALETTE_COMMANDS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("cmd:new", "new note"),
+        ("cmd:help", "help"),
+    )
+
+    def on_structured_editor_command_requested(
+        self, _message: StructuredEditor.CommandRequested
+    ) -> None:
+        """T-021: `:` opens the command palette (commands + note titles)."""
+        entries: list[tuple[str, str]] = list(self._PALETTE_COMMANDS)
+        entries += [(f"note:{note.id}", note.title or "(untitled)") for note in self._all_notes]
+        self.push_screen(CommandPalette(entries))
+
+    async def on_command_palette_selected(self, message: CommandPalette.Selected) -> None:
+        """Run the palette entry: open a note, or dispatch a named command."""
+        entry_id = message.entry_id
+        if entry_id.startswith("note:"):
+            await self.open_note(entry_id[len("note:") :])
+        elif entry_id == "cmd:new":
+            await self._new_note()
+        elif entry_id == "cmd:help":
+            self.push_screen(HelpModal())
+
+    async def _new_note(self) -> None:
+        if self._http_base_url is None:
+            return
+        note_id = await create_note(self._http_base_url, "Untitled", self._access_token)
+        await self._refresh_notes()
+        await self.open_note(note_id)
+
     # `g<key>` → pane name.
     _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {
         "b": "backlinks",
@@ -786,11 +823,7 @@ class BartlebyApp(App[None]):
         self, _message: StructuredEditor.NewNoteRequested
     ) -> None:
         """`n`: create a note and open it."""
-        if self._http_base_url is None:
-            return
-        note_id = await create_note(self._http_base_url, "Untitled", self._access_token)
-        await self._refresh_notes()
-        await self.open_note(note_id)
+        await self._new_note()
 
     def on_structured_editor_rename_requested(
         self, _message: StructuredEditor.RenameRequested

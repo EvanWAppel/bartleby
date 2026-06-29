@@ -130,6 +130,9 @@ class StructuredEditor(Static):
     class HelpRequested(Message):
         """Posted on ``?`` in normal mode (T-020 help overlay)."""
 
+    class CommandRequested(Message):
+        """Posted on ``:`` in normal mode (T-021 command palette)."""
+
     class GoToRequested(Message):
         """Posted on a ``g<key>`` chord in normal mode (T-012+ pane toggles).
 
@@ -260,6 +263,8 @@ class StructuredEditor(Static):
                 self.post_message(self.BacklinkFollowRequested(target))
         elif key == "question_mark":
             self.post_message(self.HelpRequested())  # T-020 help overlay
+        elif key == "colon":
+            self.post_message(self.CommandRequested())  # T-021 command palette
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
