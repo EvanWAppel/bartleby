@@ -1,18 +1,19 @@
-"""Modal dialogs for note CRUD (T-010).
+"""Modal dialogs.
 
 ``RenameModal`` collects a new title (returns the string, or ``None`` on
-cancel). ``ConfirmModal`` is a yes/no gate (returns ``bool``). Both are
-``ModalScreen`` subclasses driven with ``App.push_screen_wait`` so the caller
-can ``await`` the result inline.
+cancel) and ``ConfirmModal`` is a yes/no gate (returns ``bool``) — both T-010,
+driven via ``push_screen(..., callback)``. ``HelpModal`` (T-020) is a
+scrollable keybind reference, dismissed with ``Esc``/``?``.
 """
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label
+from textual.widgets import Input, Label, Static
 
 
 class RenameModal(ModalScreen[str | None]):
@@ -91,3 +92,80 @@ class ConfirmModal(ModalScreen[bool]):
             event.stop()
             event.prevent_default()
             self.dismiss(False)
+
+
+#: T-020 keybind reference: (section title, [(keys, description), ...]).
+HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Modes", [("Esc", "normal mode"), ("i", "insert mode")]),
+    (
+        "Marks",
+        [("Ctrl-B", "bold"), ("Ctrl-I", "italic"), ("Ctrl-X", "strike"), ("Ctrl-K", "link")],
+    ),
+    (
+        "Blocks (insert, at line start)",
+        [
+            ("# / ## / ###", "heading 1/2/3"),
+            ("- / 1.", "bullet / ordered list"),
+            (">", "blockquote"),
+            ("Space", "toggle task (at line start)"),
+        ],
+    ),
+    (
+        "Notes (normal)",
+        [("n", "new"), ("r", "rename"), ("d", "delete"), ("R", "restore last deleted")],
+    ),
+    ("Navigate (normal)", [("Enter", "follow [[backlink]]")]),
+    ("Find (normal)", [("/", "search"), ("t", "tag filter")]),
+    ("App", [("?", "this help"), ("Ctrl-Q", "quit")]),
+]
+
+
+def _help_text() -> Text:
+    text = Text()
+    for i, (title, rows) in enumerate(HELP_SECTIONS):
+        if i > 0:
+            text.append("\n")
+        text.append(f"{title}\n", style="bold underline")
+        for keys, desc in rows:
+            text.append("  ")
+            text.append(f"{keys:<16}", style="bold cyan")
+            text.append(f"{desc}\n")
+    return text
+
+
+class HelpModal(ModalScreen[None]):
+    """Scrollable keybind reference (T-020). Dismissed with ``Esc`` or ``?``."""
+
+    DEFAULT_CSS = """
+    HelpModal {
+        align: center middle;
+    }
+    #help-dialog {
+        width: 60;
+        height: 80%;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    #help-scroll {
+        height: 1fr;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-dialog"):
+            yield Label("Keybindings  (Esc to close)", id="help-title")
+            with VerticalScroll(id="help-scroll"):
+                yield Static(_help_text(), id="help-body")
+
+    def on_mount(self) -> None:
+        # Focus the scroller so arrow / PageDown / End scroll the reference.
+        self.query_one("#help-scroll", VerticalScroll).focus()
+
+    def on_key(self, event: events.Key) -> None:
+        # Only intercept the dismiss keys; scroll keys fall through to the
+        # focused VerticalScroll (which handles them first as it bubbles up).
+        if event.key in ("escape", "question_mark"):
+            event.stop()
+            event.prevent_default()
+            self.dismiss(None)

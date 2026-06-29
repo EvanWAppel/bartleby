@@ -44,7 +44,7 @@ from textual.widgets.option_list import Option
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
-from bartleby_tui.modals import ConfirmModal, RenameModal
+from bartleby_tui.modals import ConfirmModal, HelpModal, RenameModal
 from bartleby_tui.notes_api import (
     Note,
     create_note,
@@ -342,6 +342,10 @@ class BartlebyApp(App[None]):
     ) -> None:
         """T-011: Enter over a `[[backlink]]` opens the linked note."""
         await self.open_note(message.target_id)
+
+    def on_structured_editor_help_requested(self, _message: StructuredEditor.HelpRequested) -> None:
+        """T-020: `?` opens the scrollable keybind reference."""
+        self.push_screen(HelpModal())
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Route a selection: a notes-list row opens a note; a tag-picker row

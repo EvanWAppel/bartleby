@@ -127,6 +127,9 @@ class StructuredEditor(Static):
             super().__init__()
             self.target_id = target_id
 
+    class HelpRequested(Message):
+        """Posted on ``?`` in normal mode (T-020 help overlay)."""
+
     DEFAULT_CSS = """
     StructuredEditor {
         height: 1fr;
@@ -234,6 +237,8 @@ class StructuredEditor(Static):
             target = self._backlink_near_caret()
             if target is not None:
                 self.post_message(self.BacklinkFollowRequested(target))
+        elif key == "question_mark":
+            self.post_message(self.HelpRequested())  # T-020 help overlay
         elif key in ("left", "h"):
             self._move_horizontal(-1)
         elif key in ("right", "l"):
