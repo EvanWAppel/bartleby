@@ -53,14 +53,16 @@ from bartleby_tui.notes_api import (
     fetch_backlinks,
     fetch_mentions,
     fetch_notes,
+    fetch_snapshots,
     fetch_trash,
     mark_mention_read,
     rename_note,
     restore_note,
+    restore_snapshot,
     search_notes,
 )
 from bartleby_tui.notes_list import NotesList
-from bartleby_tui.panes import BacklinksPane, MentionsPane, TrashPane
+from bartleby_tui.panes import BacklinksPane, MentionsPane, SnapshotsPane, TrashPane
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
@@ -174,12 +176,12 @@ class BartlebyApp(App[None]):
         padding: 0 0 1 0;
     }
 
-    #backlinks-pane, #trash-pane, #inbox-pane {
+    #backlinks-pane, #trash-pane, #inbox-pane, #history-pane {
         display: none;
         height: 1fr;
     }
 
-    #backlinks-pane.active, #trash-pane.active, #inbox-pane.active {
+    #backlinks-pane.active, #trash-pane.active, #inbox-pane.active, #history-pane.active {
         display: block;
     }
 
@@ -237,6 +239,7 @@ class BartlebyApp(App[None]):
         self._backlinks_pane: BacklinksPane | None = None
         self._trash_pane: TrashPane | None = None
         self._mentions_pane: MentionsPane | None = None
+        self._snapshots_pane: SnapshotsPane | None = None
         self._active_pane: str | None = None
 
     @property
@@ -291,6 +294,9 @@ class BartlebyApp(App[None]):
                 mentions_pane = MentionsPane(id="inbox-pane")
                 self._mentions_pane = mentions_pane
                 yield mentions_pane
+                snapshots_pane = SnapshotsPane(id="history-pane")
+                self._snapshots_pane = snapshots_pane
+                yield snapshots_pane
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -397,10 +403,20 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
-    # `g<key>` → pane name. T-015 will extend this map (h history).
-    _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {"b": "backlinks", "t": "trash", "i": "inbox"}
+    # `g<key>` → pane name. (T-013 will add `c` comments.)
+    _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {
+        "b": "backlinks",
+        "t": "trash",
+        "i": "inbox",
+        "h": "history",
+    }
     # CSS ids of the swappable right-pane panes (one is `.active` at a time).
-    _PANE_IDS: ClassVar[tuple[str, ...]] = ("#backlinks-pane", "#trash-pane", "#inbox-pane")
+    _PANE_IDS: ClassVar[tuple[str, ...]] = (
+        "#backlinks-pane",
+        "#trash-pane",
+        "#inbox-pane",
+        "#history-pane",
+    )
 
     async def on_structured_editor_go_to_requested(
         self, message: StructuredEditor.GoToRequested
@@ -447,6 +463,15 @@ class BartlebyApp(App[None]):
         if name == "inbox" and self._mentions_pane is not None:
             await self._refresh_mentions()
             return self._mentions_pane
+        if name == "history" and self._snapshots_pane is not None:
+            note_id = self._current_note_id()
+            snaps = (
+                await fetch_snapshots(self._http_base_url, note_id, self._access_token)
+                if note_id is not None and self._http_base_url is not None
+                else []
+            )
+            self._snapshots_pane.set_snapshots(snaps)
+            return self._snapshots_pane
         return None
 
     async def _refresh_mentions(self) -> None:
@@ -497,6 +522,9 @@ class BartlebyApp(App[None]):
         if self._mentions_pane is not None and event.option_list is self._mentions_pane:
             await self._open_mention(event.option.id)
             return
+        if self._snapshots_pane is not None and event.option_list is self._snapshots_pane:
+            self._confirm_restore_snapshot(event.option.id)
+            return
         opens_note = event.option_list is self._notes_view or (
             event.option_list is self._backlinks_pane
         )
@@ -516,6 +544,27 @@ class BartlebyApp(App[None]):
             await mark_mention_read(self._http_base_url, mention_id, self._access_token)
             await self._refresh_mentions()
         await self.open_note(mention.note_id)
+
+    def _confirm_restore_snapshot(self, snapshot_id: str | None) -> None:
+        """T-015: Enter on a snapshot confirms, then restores it via the server.
+
+        The server writes a pre-restore auto-snapshot and applies the snapshot's
+        Yjs state to the live doc (C-006); the new content reaches the editor
+        through normal collab sync.
+        """
+        note_id = self._current_note_id()
+        if snapshot_id is None or note_id is None or self._http_base_url is None:
+            return
+
+        def _confirm(ok: bool | None) -> None:
+            if ok:
+                self.run_worker(self._restore_snapshot(note_id, snapshot_id))
+
+        self.push_screen(ConfirmModal("Restore this snapshot?"), _confirm)
+
+    async def _restore_snapshot(self, note_id: str, snapshot_id: str) -> None:
+        assert self._http_base_url is not None
+        await restore_snapshot(self._http_base_url, note_id, snapshot_id, self._access_token)
 
     # ----------------------------------------------------------- notes polling
 
