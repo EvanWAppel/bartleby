@@ -48,8 +48,8 @@ def mock_server() -> Iterator[_MockServer]:
     state = _MockServer(base_url="")
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_: Any) -> None:
-            return
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)

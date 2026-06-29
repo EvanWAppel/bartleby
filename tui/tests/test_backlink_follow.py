@@ -8,6 +8,8 @@ mount the full app with ``connect_on_mount=False`` — no websocket.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import y_py as Y
 
@@ -21,7 +23,9 @@ def _add_backlink_paragraph(doc: Y.YDoc, *, lead: str, target_id: str, title: st
     """Append ``<paragraph>{lead}<backlink targetId title/></paragraph>``."""
     root = doc.get_xml_element("prosemirror")
     with doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
-        para = (
+        # first_child is typed YXmlElement | YXmlText; we only ever build into
+        # a paragraph element here, so widen to Any for the push_xml_* calls.
+        para: Any = (
             root.first_child
             if root.first_child is not None
             else root.push_xml_element(txn, "paragraph")
