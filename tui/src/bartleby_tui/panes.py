@@ -12,7 +12,7 @@ from textual.message import Message
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
-from bartleby_tui.notes_api import Backlink, Mention, Note, Snapshot
+from bartleby_tui.notes_api import Backlink, Comment, Mention, Note, Snapshot
 
 
 class BacklinksPane(OptionList):
@@ -132,3 +132,89 @@ class SnapshotsPane(OptionList):
         for snap in self._snapshots:
             label = snap.label if snap.label else "auto"
             self.add_option(Option(f"{label}  {snap.created_at}", id=snap.id))
+
+
+class CommentsPane(OptionList):
+    """Comment threads (T-013/T-014). One row per root (``○``/``✓`` =
+    open/resolved); Enter expands to show replies. ``c`` new, ``r`` reply,
+    ``x`` resolve act on the highlighted root."""
+
+    class NewCommentRequested(Message):
+        """Posted on ``c`` — compose a new top-level comment."""
+
+    class ReplyRequested(Message):
+        def __init__(self, comment_id: str) -> None:
+            super().__init__()
+            self.comment_id = comment_id
+
+    class ResolveRequested(Message):
+        def __init__(self, comment_id: str) -> None:
+            super().__init__()
+            self.comment_id = comment_id
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._comments: tuple[Comment, ...] = ()
+        self._expanded: set[str] = set()
+
+    @property
+    def comments(self) -> tuple[Comment, ...]:
+        return self._comments
+
+    @property
+    def expanded(self) -> set[str]:
+        return set(self._expanded)
+
+    def set_comments(self, comments: list[Comment] | tuple[Comment, ...]) -> None:
+        self._comments = tuple(comments)
+        self._expanded &= {c.id for c in self._comments}  # drop stale ids
+        self._rebuild()
+
+    def expand(self, comment_id: str) -> None:
+        """Mark a thread expanded (so its replies show on the next rebuild)."""
+        self._expanded.add(comment_id)
+
+    def _roots(self) -> list[Comment]:
+        return [c for c in self._comments if c.parent_comment_id is None]
+
+    def _replies_of(self, root_id: str) -> list[Comment]:
+        return [c for c in self._comments if c.parent_comment_id == root_id]
+
+    def _rebuild(self) -> None:
+        self.clear_options()
+        for root in self._roots():
+            marker = "✓" if root.resolved_at else "○"
+            replies = self._replies_of(root.id)
+            suffix = f"  [{len(replies)}]" if replies else ""
+            self.add_option(Option(f"{marker} {root.body}{suffix}", id=f"c:{root.id}"))
+            if root.id in self._expanded:
+                for reply in replies:
+                    self.add_option(Option(f"    ↳ {reply.body}", id=f"r:{reply.id}"))
+
+    def _highlighted_root_id(self) -> str | None:
+        if self.highlighted is None:
+            return None
+        option_id = self.get_option_at_index(self.highlighted).id
+        if option_id is not None and option_id.startswith("c:"):
+            return option_id[2:]
+        return None
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "c":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.NewCommentRequested())
+            return
+        if event.key in ("r", "x", "enter"):
+            root_id = self._highlighted_root_id()
+            if root_id is None:
+                return
+            event.stop()
+            event.prevent_default()
+            if event.key == "r":
+                self.post_message(self.ReplyRequested(root_id))
+            elif event.key == "x":
+                self.post_message(self.ResolveRequested(root_id))
+            else:  # enter → expand / collapse
+                self._expanded ^= {root_id}
+                self._rebuild()

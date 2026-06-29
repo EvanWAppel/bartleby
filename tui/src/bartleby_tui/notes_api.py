@@ -62,6 +62,19 @@ class Snapshot:
     created_at: str
 
 
+@dataclass(frozen=True)
+class Comment:
+    """One comment row (T-013). ``parent_comment_id is None`` ⇒ a thread root;
+    ``resolved_at is not None`` ⇒ resolved."""
+
+    id: str
+    parent_comment_id: str | None
+    body: str
+    author_id: str
+    resolved_at: str | None
+    created_at: str
+
+
 class NotesApiError(RuntimeError):
     """Raised when the /notes response is missing/malformed fields."""
 
@@ -99,6 +112,59 @@ async def search_notes(
             if isinstance(hit_id, str):
                 ids.append(hit_id)
     return ids
+
+
+async def fetch_comments(
+    http_base_url: str, note_id: str, access_token: str | None = None
+) -> list[Comment]:
+    """GET ``/notes/:id/comments`` (C-007); flat list (roots + replies)."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/comments"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    rows = _require_list(data, "comments")
+    out: list[Comment] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NotesApiError("comments[] entry must be an object")
+        obj = cast("Mapping[str, object]", row)
+        parent = obj.get("parent_comment_id")
+        resolved = obj.get("resolved_at")
+        out.append(
+            Comment(
+                id=_require_str(obj, "id"),
+                parent_comment_id=parent if isinstance(parent, str) else None,
+                body=_require_str(obj, "body"),
+                author_id=_require_str(obj, "author_id"),
+                resolved_at=resolved if isinstance(resolved, str) else None,
+                created_at=_require_str(obj, "created_at"),
+            )
+        )
+    return out
+
+
+async def create_comment(
+    http_base_url: str, note_id: str, body: str, access_token: str | None = None
+) -> None:
+    """POST ``/notes/:id/comments`` (C-007). The TUI sends an empty anchor —
+    note-level comments — since it has no Yjs selection to serialize yet."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/comments"
+    payload = {"body": body, "anchor": ""}
+    await asyncio.to_thread(_request_json_sync, "POST", url, payload, access_token)
+
+
+async def reply_comment(
+    http_base_url: str, comment_id: str, body: str, access_token: str | None = None
+) -> None:
+    """POST ``/comments/:id/replies`` (C-007)."""
+    url = f"{http_base_url.rstrip('/')}/comments/{quote(comment_id)}/replies"
+    await asyncio.to_thread(_request_json_sync, "POST", url, {"body": body}, access_token)
+
+
+async def resolve_comment(
+    http_base_url: str, comment_id: str, access_token: str | None = None
+) -> None:
+    """PATCH ``/comments/:id/resolve`` (C-007) — no body."""
+    url = f"{http_base_url.rstrip('/')}/comments/{quote(comment_id)}/resolve"
+    await asyncio.to_thread(_request_json_sync, "PATCH", url, None, access_token)
 
 
 async def fetch_snapshots(

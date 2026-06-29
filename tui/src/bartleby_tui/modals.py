@@ -55,6 +55,49 @@ class RenameModal(ModalScreen[str | None]):
             self.dismiss(None)
 
 
+class TextInputModal(ModalScreen[str | None]):
+    """Generic single-line text prompt. Enter submits, Esc cancels (None).
+
+    Used for the comment composer / reply box (T-013/T-014).
+    """
+
+    DEFAULT_CSS = """
+    TextInputModal {
+        align: center middle;
+    }
+    #text-input-dialog {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, title: str, placeholder: str = "") -> None:
+        super().__init__()
+        self._title = title
+        self._placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="text-input-dialog"):
+            yield Label(self._title)
+            yield Input(placeholder=self._placeholder, id="text-input-field")
+
+    def on_mount(self) -> None:
+        self.query_one("#text-input-field", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.dismiss(event.value)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.dismiss(None)
+
+
 class ConfirmModal(ModalScreen[bool]):
     """Yes/no confirmation. ``y``/Enter → True, ``n``/Esc → False."""
 
