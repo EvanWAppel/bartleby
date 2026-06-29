@@ -32,6 +32,15 @@ class Note:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class Backlink:
+    """One inbound link to a note (T-012 inbound-links pane)."""
+
+    source_id: str
+    source_title: str
+    link_text: str
+
+
 class NotesApiError(RuntimeError):
     """Raised when the /notes response is missing/malformed fields."""
 
@@ -69,6 +78,31 @@ async def search_notes(
             if isinstance(hit_id, str):
                 ids.append(hit_id)
     return ids
+
+
+async def fetch_backlinks(
+    http_base_url: str, note_id: str, access_token: str | None = None
+) -> list[Backlink]:
+    """GET ``/notes/:id/backlinks`` (S-007); return inbound links.
+
+    Server shape: ``{"backlinks": [{source_id, source_title, link_text}, ...]}``.
+    """
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/backlinks"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    rows = _require_list(data, "backlinks")
+    out: list[Backlink] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NotesApiError("backlinks[] entry must be an object")
+        obj = cast("Mapping[str, object]", row)
+        out.append(
+            Backlink(
+                source_id=_require_str(obj, "source_id"),
+                source_title=_require_str(obj, "source_title"),
+                link_text=_require_str(obj, "link_text"),
+            )
+        )
+    return out
 
 
 async def create_note(

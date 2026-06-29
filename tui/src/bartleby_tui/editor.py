@@ -130,6 +130,17 @@ class StructuredEditor(Static):
     class HelpRequested(Message):
         """Posted on ``?`` in normal mode (T-020 help overlay)."""
 
+    class GoToRequested(Message):
+        """Posted on a ``g<key>`` chord in normal mode (T-012+ pane toggles).
+
+        ``target`` is the second key (``b`` backlinks, ``c`` comments,
+        ``h`` history, ``t`` trash, ``i`` inbox); the app decides what to do.
+        """
+
+        def __init__(self, target: str) -> None:
+            super().__init__()
+            self.target = target
+
     DEFAULT_CSS = """
     StructuredEditor {
         height: 1fr;
@@ -145,6 +156,8 @@ class StructuredEditor(Static):
         self._mode: str = MODE_INSERT
         # When not None we're capturing a URL for a Ctrl-K link toggle.
         self._link_buffer: str | None = None
+        # True after `g` in normal mode, awaiting the chord's second key.
+        self._pending_g: bool = False
 
     # --------------------------------------------------------------- lifecycle
 
@@ -214,7 +227,15 @@ class StructuredEditor(Static):
 
     def _handle_normal_key(self, event: events.Key) -> None:
         key = event.key
-        if key == "i":
+        if self._pending_g:
+            # Second key of a `g<key>` chord (e.g. `g b`).
+            self._pending_g = False
+            target = event.character if event.is_printable and event.character else key
+            self.post_message(self.GoToRequested(target))
+            return
+        if key == "g":
+            self._pending_g = True
+        elif key == "i":
             self._mode = MODE_INSERT
         elif key == "slash":
             # vim-style search: only in normal mode, so insert-mode `/` stays
