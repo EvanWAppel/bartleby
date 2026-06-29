@@ -41,6 +41,17 @@ class Backlink:
     link_text: str
 
 
+@dataclass(frozen=True)
+class Mention:
+    """One @mention in the inbox (T-017). ``read_at is None`` ⇒ unread."""
+
+    id: str
+    note_id: str
+    note_title: str
+    source: str
+    read_at: str | None
+
+
 class NotesApiError(RuntimeError):
     """Raised when the /notes response is missing/malformed fields."""
 
@@ -78,6 +89,38 @@ async def search_notes(
             if isinstance(hit_id, str):
                 ids.append(hit_id)
     return ids
+
+
+async def fetch_mentions(http_base_url: str, access_token: str | None = None) -> list[Mention]:
+    """GET ``/mentions`` (M-003); return all mentions (unread + recent)."""
+    url = f"{http_base_url.rstrip('/')}/mentions"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    rows = _require_list(data, "mentions")
+    out: list[Mention] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NotesApiError("mentions[] entry must be an object")
+        obj = cast("Mapping[str, object]", row)
+        read_at = obj.get("read_at")
+        source = obj.get("source")
+        out.append(
+            Mention(
+                id=_require_str(obj, "id"),
+                note_id=_require_str(obj, "note_id"),
+                note_title=_require_str(obj, "note_title"),
+                source=source if isinstance(source, str) else "",
+                read_at=read_at if isinstance(read_at, str) else None,
+            )
+        )
+    return out
+
+
+async def mark_mention_read(
+    http_base_url: str, mention_id: str, access_token: str | None = None
+) -> None:
+    """POST ``/mentions/:id/read`` (M-004) — idempotent mark-as-read."""
+    url = f"{http_base_url.rstrip('/')}/mentions/{quote(mention_id)}/read"
+    await asyncio.to_thread(_request_json_sync, "POST", url, None, access_token)
 
 
 async def fetch_trash(http_base_url: str, access_token: str | None = None) -> list[Note]:

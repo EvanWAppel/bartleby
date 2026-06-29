@@ -51,14 +51,16 @@ from bartleby_tui.notes_api import (
     delete_note,
     delete_note_forever,
     fetch_backlinks,
+    fetch_mentions,
     fetch_notes,
     fetch_trash,
+    mark_mention_read,
     rename_note,
     restore_note,
     search_notes,
 )
 from bartleby_tui.notes_list import NotesList
-from bartleby_tui.panes import BacklinksPane, TrashPane
+from bartleby_tui.panes import BacklinksPane, MentionsPane, TrashPane
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
@@ -172,12 +174,12 @@ class BartlebyApp(App[None]):
         padding: 0 0 1 0;
     }
 
-    #backlinks-pane, #trash-pane {
+    #backlinks-pane, #trash-pane, #inbox-pane {
         display: none;
         height: 1fr;
     }
 
-    #backlinks-pane.active, #trash-pane.active {
+    #backlinks-pane.active, #trash-pane.active, #inbox-pane.active {
         display: block;
     }
 
@@ -231,9 +233,10 @@ class BartlebyApp(App[None]):
         self._active_tag: str | None = None
         # T-010 CRUD: last soft-deleted note id, so `R` can restore it.
         self._last_deleted: str | None = None
-        # T-012/T-016 right-pane panes + which one is showing (None = hidden).
+        # T-012/T-016/T-017 right-pane panes + which one is showing (None = hidden).
         self._backlinks_pane: BacklinksPane | None = None
         self._trash_pane: TrashPane | None = None
+        self._mentions_pane: MentionsPane | None = None
         self._active_pane: str | None = None
 
     @property
@@ -285,6 +288,9 @@ class BartlebyApp(App[None]):
                 trash_pane = TrashPane(id="trash-pane")
                 self._trash_pane = trash_pane
                 yield trash_pane
+                mentions_pane = MentionsPane(id="inbox-pane")
+                self._mentions_pane = mentions_pane
+                yield mentions_pane
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -391,8 +397,10 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
-    # `g<key>` → pane name. T-015/T-017 extend this map (h history, i inbox).
-    _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {"b": "backlinks", "t": "trash"}
+    # `g<key>` → pane name. T-015 will extend this map (h history).
+    _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {"b": "backlinks", "t": "trash", "i": "inbox"}
+    # CSS ids of the swappable right-pane panes (one is `.active` at a time).
+    _PANE_IDS: ClassVar[tuple[str, ...]] = ("#backlinks-pane", "#trash-pane", "#inbox-pane")
 
     async def on_structured_editor_go_to_requested(
         self, message: StructuredEditor.GoToRequested
@@ -415,7 +423,7 @@ class BartlebyApp(App[None]):
         active = await self._populate_pane(name)
         if active is None:
             return
-        for pane_id in ("#backlinks-pane", "#trash-pane"):
+        for pane_id in self._PANE_IDS:
             self.query_one(pane_id).set_class(pane_id == f"#{name}-pane", "active")
         self.query_one("#right-pane-title", Label).update(name.capitalize())
         right.add_class("visible")
@@ -436,7 +444,20 @@ class BartlebyApp(App[None]):
         if name == "trash" and self._trash_pane is not None:
             await self._refresh_trash()
             return self._trash_pane
+        if name == "inbox" and self._mentions_pane is not None:
+            await self._refresh_mentions()
+            return self._mentions_pane
         return None
+
+    async def _refresh_mentions(self) -> None:
+        if self._mentions_pane is None:
+            return
+        mentions = (
+            await fetch_mentions(self._http_base_url, self._access_token)
+            if self._http_base_url is not None
+            else []
+        )
+        self._mentions_pane.set_mentions(mentions)
 
     async def _refresh_trash(self) -> None:
         if self._trash_pane is None:
@@ -473,6 +494,9 @@ class BartlebyApp(App[None]):
             if tag is not None:
                 self._apply_tag_filter(tag)
             return
+        if self._mentions_pane is not None and event.option_list is self._mentions_pane:
+            await self._open_mention(event.option.id)
+            return
         opens_note = event.option_list is self._notes_view or (
             event.option_list is self._backlinks_pane
         )
@@ -480,6 +504,18 @@ class BartlebyApp(App[None]):
             note_id = event.option.id
             if note_id is not None:
                 await self.open_note(note_id)
+
+    async def _open_mention(self, mention_id: str | None) -> None:
+        """T-017: mark the mention read, refresh the inbox, open its note."""
+        if mention_id is None or self._mentions_pane is None:
+            return
+        mention = self._mentions_pane.mention_for(mention_id)
+        if mention is None:
+            return
+        if self._http_base_url is not None:
+            await mark_mention_read(self._http_base_url, mention_id, self._access_token)
+            await self._refresh_mentions()
+        await self.open_note(mention.note_id)
 
     # ----------------------------------------------------------- notes polling
 

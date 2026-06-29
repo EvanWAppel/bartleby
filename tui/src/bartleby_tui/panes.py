@@ -12,7 +12,7 @@ from textual.message import Message
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
-from bartleby_tui.notes_api import Backlink, Note
+from bartleby_tui.notes_api import Backlink, Mention, Note
 
 
 class BacklinksPane(OptionList):
@@ -81,3 +81,32 @@ class TrashPane(OptionList):
                 event.stop()
                 event.prevent_default()
                 self.post_message(self.DeleteForeverRequested(note_id))
+
+
+class MentionsPane(OptionList):
+    """Inbox of @mentions (T-017). Option id == mention id; ``●`` marks unread."""
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._mentions: tuple[Mention, ...] = ()
+
+    @property
+    def mentions(self) -> tuple[Mention, ...]:
+        return self._mentions
+
+    @property
+    def unread_count(self) -> int:
+        return sum(1 for m in self._mentions if m.read_at is None)
+
+    def mention_for(self, mention_id: str) -> Mention | None:
+        return next((m for m in self._mentions if m.id == mention_id), None)
+
+    def set_mentions(self, mentions: list[Mention] | tuple[Mention, ...]) -> None:
+        self._mentions = tuple(mentions)
+        self.clear_options()
+        for mention in self._mentions:
+            marker = "● " if mention.read_at is None else "  "
+            label = f"{marker}{mention.note_title or '(untitled)'}"
+            if mention.source:
+                label += f"  {mention.source}"
+            self.add_option(Option(label, id=mention.id))
