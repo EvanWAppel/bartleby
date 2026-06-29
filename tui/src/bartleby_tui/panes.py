@@ -12,7 +12,7 @@ from textual.message import Message
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
-from bartleby_tui.notes_api import Backlink, Mention, Note
+from bartleby_tui.notes_api import Backlink, Mention, Note, Snapshot
 
 
 class BacklinksPane(OptionList):
@@ -110,3 +110,25 @@ class MentionsPane(OptionList):
             if mention.source:
                 label += f"  {mention.source}"
             self.add_option(Option(label, id=mention.id))
+
+
+class SnapshotsPane(OptionList):
+    """History list (T-015). Option id == snapshot id; Enter restores."""
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._snapshots: tuple[Snapshot, ...] = ()
+
+    @property
+    def snapshots(self) -> tuple[Snapshot, ...]:
+        return self._snapshots
+
+    def snapshot_for(self, snapshot_id: str) -> Snapshot | None:
+        return next((s for s in self._snapshots if s.id == snapshot_id), None)
+
+    def set_snapshots(self, snapshots: list[Snapshot] | tuple[Snapshot, ...]) -> None:
+        self._snapshots = tuple(snapshots)
+        self.clear_options()
+        for snap in self._snapshots:
+            label = snap.label if snap.label else "auto"
+            self.add_option(Option(f"{label}  {snap.created_at}", id=snap.id))

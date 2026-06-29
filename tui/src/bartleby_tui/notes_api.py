@@ -52,6 +52,16 @@ class Mention:
     read_at: str | None
 
 
+@dataclass(frozen=True)
+class Snapshot:
+    """One history snapshot of a note (T-015). ``label is None`` ⇒ auto."""
+
+    id: str
+    note_id: str
+    label: str | None
+    created_at: str
+
+
 class NotesApiError(RuntimeError):
     """Raised when the /notes response is missing/malformed fields."""
 
@@ -89,6 +99,40 @@ async def search_notes(
             if isinstance(hit_id, str):
                 ids.append(hit_id)
     return ids
+
+
+async def fetch_snapshots(
+    http_base_url: str, note_id: str, access_token: str | None = None
+) -> list[Snapshot]:
+    """GET ``/notes/:id/snapshots`` (C-004); newest-first history list."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/snapshots"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    rows = _require_list(data, "snapshots")
+    out: list[Snapshot] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NotesApiError("snapshots[] entry must be an object")
+        obj = cast("Mapping[str, object]", row)
+        label = obj.get("label")
+        out.append(
+            Snapshot(
+                id=_require_str(obj, "id"),
+                note_id=_require_str(obj, "note_id"),
+                label=label if isinstance(label, str) else None,
+                created_at=_require_str(obj, "created_at"),
+            )
+        )
+    return out
+
+
+async def restore_snapshot(
+    http_base_url: str, note_id: str, snapshot_id: str, access_token: str | None = None
+) -> None:
+    """POST ``/notes/:id/snapshots/:snap_id/restore`` (C-006)."""
+    url = (
+        f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/snapshots/{quote(snapshot_id)}/restore"
+    )
+    await asyncio.to_thread(_request_json_sync, "POST", url, None, access_token)
 
 
 async def fetch_mentions(http_base_url: str, access_token: str | None = None) -> list[Mention]:
