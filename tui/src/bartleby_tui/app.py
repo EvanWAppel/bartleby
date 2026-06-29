@@ -26,9 +26,12 @@ list) can target them without touching the skeleton. T-006's
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import re
 import sys
+from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
 import y_py as Y
@@ -57,6 +60,8 @@ from bartleby_tui.notes_api import (
     create_note,
     delete_note,
     delete_note_forever,
+    export_all_zip,
+    export_note_markdown,
     fetch_backlinks,
     fetch_comments,
     fetch_mentions,
@@ -427,6 +432,8 @@ class BartlebyApp(App[None]):
     # Palette commands (entry id → label). Notes are appended dynamically.
     _PALETTE_COMMANDS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("cmd:new", "new note"),
+        ("cmd:export", "export"),
+        ("cmd:export-all", "export-all"),
         ("cmd:help", "help"),
     )
 
@@ -445,6 +452,10 @@ class BartlebyApp(App[None]):
             await self.open_note(entry_id[len("note:") :])
         elif entry_id == "cmd:new":
             await self._new_note()
+        elif entry_id == "cmd:export":
+            self._export_current_note()
+        elif entry_id == "cmd:export-all":
+            self._export_all()
         elif entry_id == "cmd:help":
             self.push_screen(HelpModal())
 
@@ -454,6 +465,42 @@ class BartlebyApp(App[None]):
         note_id = await create_note(self._http_base_url, "Untitled", self._access_token)
         await self._refresh_notes()
         await self.open_note(note_id)
+
+    # --------------------------------------------------------- T-022/T-023 export
+
+    def _export_current_note(self) -> None:
+        """`:export` — prompt for a path, then write the note's markdown there."""
+        note_id = self._current_note_id()
+        if note_id is None or self._http_base_url is None:
+            return
+        default = f"{_slugify(self._title_of(note_id)) or 'note'}.md"
+
+        def _submit(path: str | None) -> None:
+            if path:
+                self.run_worker(self._write_note_export(note_id, path))
+
+        self.push_screen(TextInputModal("Export note to:", initial=default), _submit)
+
+    async def _write_note_export(self, note_id: str, path: str) -> None:
+        assert self._http_base_url is not None
+        markdown = await export_note_markdown(self._http_base_url, note_id, self._access_token)
+        await asyncio.to_thread(Path(path).write_text, markdown, "utf-8")
+
+    def _export_all(self) -> None:
+        """`:export-all` — prompt for a path, then write the all-notes zip there."""
+        if self._http_base_url is None:
+            return
+
+        def _submit(path: str | None) -> None:
+            if path:
+                self.run_worker(self._write_all_export(path))
+
+        self.push_screen(TextInputModal("Export all to:", initial="bartleby-notes.zip"), _submit)
+
+    async def _write_all_export(self, path: str) -> None:
+        assert self._http_base_url is not None
+        data = await export_all_zip(self._http_base_url, self._access_token)
+        await asyncio.to_thread(Path(path).write_bytes, data)
 
     # `g<key>` → pane name.
     _PANE_FOR_CHORD: ClassVar[dict[str, str]] = {
@@ -907,6 +954,12 @@ def _block_plain_text(block: Block) -> str:
     if block.children:
         return " ".join(_block_plain_text(child) for child in block.children)
     return "".join(inline.text for inline in block.inlines)
+
+
+def _slugify(title: str) -> str:
+    """Lowercase, hyphenate, strip to a safe default export filename stem."""
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return slug
 
 
 def main() -> None:
