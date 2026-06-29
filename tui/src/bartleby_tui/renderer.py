@@ -67,6 +67,7 @@ class Inline:
     marks: frozenset[MarkName] = frozenset()
     href: str | None = None  # populated when 'link' is in marks
     atom_kind: str | None = None  # 'backlink' | 'mention' | None
+    target_id: str | None = None  # backlink atom's target note id (T-011 follow)
 
 
 @dataclass
@@ -467,10 +468,12 @@ def _collect_inlines(parent: object) -> list[Inline]:
             atom_attrs = _yxml_attributes(child)
             if name == "backlink":
                 title = atom_attrs.get("title", "")
+                target = atom_attrs.get("targetId")
                 inlines.append(
                     Inline(
                         text=f"[[{title}]]" if title else "[[]]",
                         atom_kind="backlink",
+                        target_id=target if isinstance(target, str) else None,
                     )
                 )
             elif name == "mention":

@@ -55,8 +55,8 @@ def server() -> Iterator[_Server]:
     state = _Server(base_url="")
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_: Any) -> None:
-            return
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
 
         def _body(self) -> dict[str, Any]:
             length = int(self.headers.get("content-length", "0"))
