@@ -18,10 +18,10 @@ The renderer is split in two pieces:
    available. The intermediate representation lets the renderer be
    exercised in tests without depending on that limitation.
 
-Code block syntax highlighting (T-025) is intentionally deferred — code
-blocks are rendered as bordered panels with plain monospace content.
-The ``language`` attribute is surfaced in the panel title so the future
-T-025 PR can light up coloring with no shape change here.
+Code block syntax highlighting (T-025) tokenizes the block via pygments
+(by its ``language`` attribute) into styled Rich Text; ``text``/unknown
+languages render unstyled. The bordered panel + language-title shape is
+unchanged.
 
 Footnotes for links: each `link` mark on inline text emits a numbered
 superscript-like marker (e.g. ``[1]``) inline, and the renderer collects
@@ -34,6 +34,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from pygments import lex
+from pygments.lexers import get_lexer_by_name
+from pygments.token import Comment, Keyword, Name, Number, Operator, String, _TokenType
+from pygments.util import ClassNotFound
 from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -195,13 +199,57 @@ def _render_blockquote(block: Block, footnotes: list[str]) -> RenderableType:
     return bar
 
 
+# T-025: pygments token type → Rich style. Lookups walk a token's parent
+# chain (e.g. ``Keyword.Namespace`` → ``Keyword``) so subtypes inherit. Colors
+# are coarse on purpose — enough to be scannable in a terminal, stable enough
+# for tests to assert on.
+_TOKEN_STYLES: dict[_TokenType, str] = {
+    Keyword: "bold magenta",
+    Name.Function: "blue",
+    Name.Class: "bold blue",
+    Name.Builtin: "cyan",
+    String: "green",
+    Number: "cyan",
+    Comment: "dim italic",
+    Operator: "yellow",
+}
+
+
+def _style_for_token(token_type: _TokenType) -> str | None:
+    node: _TokenType | None = token_type
+    while node is not None:
+        style = _TOKEN_STYLES.get(node)
+        if style is not None:
+            return style
+        node = node.parent
+    return None
+
+
+def _highlight_code(code: str, language: str) -> Text:
+    """Tokenize ``code`` with pygments and return styled Rich Text.
+
+    Unknown languages (no pygments lexer) fall back to unstyled text so the
+    panel still renders. Errors from pygments propagate per agents.md.
+    """
+    try:
+        lexer = get_lexer_by_name(language)
+    except ClassNotFound:
+        log.debug("no pygments lexer for %r; rendering code unstyled", language)
+        return Text(code)
+    text = Text()
+    for token_type, value in lex(code, lexer):
+        text.append(value, style=_style_for_token(token_type))
+    text.rstrip()  # pygments appends a trailing newline token
+    return text
+
+
 def _render_code_block(block: Block, _footnotes: list[str]) -> RenderableType:
     language = str(block.attrs.get("language", "text") or "text")
-    # Code blocks don't carry marks (schema: ``marks: ''``). Render the
-    # raw text as monospaced content inside a rounded panel. T-025 will
-    # introduce per-language coloring; we keep the structural shape
-    # stable here so that swap is a leaf change.
-    text = Text("".join(inline.text for inline in block.inlines))
+    code = "".join(inline.text for inline in block.inlines)
+    # Code blocks don't carry marks (schema: ``marks: ''``). For a real
+    # language, syntax-highlight via pygments (T-025); plain ``text`` stays
+    # unstyled. The rounded panel + language title shape is unchanged.
+    text = Text(code) if language == "text" else _highlight_code(code, language)
     title = language if language != "text" else None
     return Panel(text, box=box.ROUNDED, title=title, title_align="right", expand=False)
 
