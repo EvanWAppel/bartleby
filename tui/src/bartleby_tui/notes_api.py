@@ -322,6 +322,30 @@ def _request_json_sync(
     return decoded if isinstance(decoded, dict) else {}
 
 
+async def export_note_markdown(
+    http_base_url: str, note_id: str, access_token: str | None = None
+) -> str:
+    """GET ``/notes/:id/export.md`` (I-004); the note's markdown + frontmatter."""
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/export.md"
+    raw = await asyncio.to_thread(_get_bytes_sync, url, access_token)
+    return raw.decode("utf-8")
+
+
+async def export_all_zip(http_base_url: str, access_token: str | None = None) -> bytes:
+    """GET ``/export/all.zip`` (I-005); a zip of every live note."""
+    url = f"{http_base_url.rstrip('/')}/export/all.zip"
+    return await asyncio.to_thread(_get_bytes_sync, url, access_token)
+
+
+def _get_bytes_sync(url: str, access_token: str | None) -> bytes:
+    headers = {}
+    if access_token is not None:
+        headers["authorization"] = f"Bearer {access_token}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    with urllib.request.urlopen(req, timeout=30) as res:
+        return res.read()
+
+
 def _get_json_sync(url: str, access_token: str | None) -> dict[str, Any]:
     headers = {"accept": "application/json"}
     if access_token is not None:

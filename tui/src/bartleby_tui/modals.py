@@ -85,15 +85,16 @@ class TextInputModal(ModalScreen[str | None]):
     }
     """
 
-    def __init__(self, title: str, placeholder: str = "") -> None:
+    def __init__(self, title: str, placeholder: str = "", initial: str = "") -> None:
         super().__init__()
         self._title = title
         self._placeholder = placeholder
+        self._initial = initial
 
     def compose(self) -> ComposeResult:
         with Vertical(id="text-input-dialog"):
             yield Label(self._title)
-            yield Input(placeholder=self._placeholder, id="text-input-field")
+            yield Input(value=self._initial, placeholder=self._placeholder, id="text-input-field")
 
     def on_mount(self) -> None:
         self.query_one("#text-input-field", Input).focus()
