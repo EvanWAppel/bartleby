@@ -68,6 +68,7 @@ from bartleby_tui.notes_api import (
     fetch_notes,
     fetch_snapshots,
     fetch_trash,
+    fetch_users,
     mark_mention_read,
     rename_note,
     reply_comment,
@@ -257,6 +258,8 @@ class BartlebyApp(App[None]):
         self._active_tag: str | None = None
         # T-010 CRUD: last soft-deleted note id, so `R` can restore it.
         self._last_deleted: str | None = None
+        # T-006 `@` picker: email → display name, cached from GET /users.
+        self._users: dict[str, str] = {}
         # T-012/T-016/T-017 right-pane panes + which one is showing (None = hidden).
         self._backlinks_pane: BacklinksPane | None = None
         self._trash_pane: TrashPane | None = None
@@ -445,11 +448,33 @@ class BartlebyApp(App[None]):
         entries += [(f"note:{note.id}", note.title or "(untitled)") for note in self._all_notes]
         self.push_screen(CommandPalette(entries))
 
+    def on_structured_editor_backlink_picker_requested(
+        self, _message: StructuredEditor.BacklinkPickerRequested
+    ) -> None:
+        """T-006: `[[` opens a notes picker; the selection inserts a backlink."""
+        entries = [(f"backlink:{note.id}", note.title or "(untitled)") for note in self._all_notes]
+        self.push_screen(CommandPalette(entries))
+
+    async def on_structured_editor_mention_picker_requested(
+        self, _message: StructuredEditor.MentionPickerRequested
+    ) -> None:
+        """T-006: `@` opens a users picker; the selection inserts a mention."""
+        if self._http_base_url is not None:
+            self._users = dict(await fetch_users(self._http_base_url, self._access_token))
+        entries = [(f"mention:{email}", display) for email, display in self._users.items()]
+        self.push_screen(CommandPalette(entries))
+
     async def on_command_palette_selected(self, message: CommandPalette.Selected) -> None:
-        """Run the palette entry: open a note, or dispatch a named command."""
+        """Run the palette entry: open a note, insert an atom, or run a command."""
         entry_id = message.entry_id
         if entry_id.startswith("note:"):
             await self.open_note(entry_id[len("note:") :])
+        elif entry_id.startswith("backlink:") and self._editor is not None:
+            note_id = entry_id[len("backlink:") :]
+            self._editor.insert_backlink(note_id, self._title_of(note_id))
+        elif entry_id.startswith("mention:") and self._editor is not None:
+            email = entry_id[len("mention:") :]
+            self._editor.insert_mention(email, self._users.get(email, email))
         elif entry_id == "cmd:new":
             await self._new_note()
         elif entry_id == "cmd:export":

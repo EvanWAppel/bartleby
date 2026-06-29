@@ -461,3 +461,72 @@ def toggle_task(
     is_checked = attrs.get("checked") in _TRUE_VALUES
     with doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
         item.set_attribute(txn, "checked", "false" if is_checked else "true")
+
+
+# ----------------------------------------------------------------- insert_atom
+
+
+def _split_and_insert(
+    segs: list[dict[str, Any]], offset: int, atom: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Insert ``atom`` at character ``offset``, splitting a text run if needed.
+
+    Atoms count as length 1 (matching the caret model); text runs split.
+    """
+    out: list[dict[str, Any]] = []
+    pos = 0
+    inserted = False
+    for seg in segs:
+        if seg["kind"] == "text":
+            length = len(seg["text"])
+            if not inserted and pos <= offset <= pos + length:
+                local = offset - pos
+                if local > 0:
+                    out.append(
+                        {"kind": "text", "text": seg["text"][:local], "marks": dict(seg["marks"])}
+                    )
+                out.append(atom)
+                if local < length:
+                    out.append(
+                        {"kind": "text", "text": seg["text"][local:], "marks": dict(seg["marks"])}
+                    )
+                inserted = True
+            else:
+                out.append(seg)
+            pos += length
+        else:
+            if not inserted and offset == pos:
+                out.append(atom)
+                inserted = True
+            out.append(seg)
+            pos += 1
+    if not inserted:
+        out.append(atom)
+    return out
+
+
+def insert_atom(
+    doc: Y.YDoc,
+    block_index: BlockRef,
+    offset: int,
+    name: str,
+    attrs: dict[str, Any],
+    *,
+    fragment_name: str = "prosemirror",
+) -> None:
+    """Insert an inline atom element (``backlink``/``mention``) at ``offset``.
+
+    The atom occupies one caret position. Mirrors the web atom nodes
+    (backlink: ``targetId``/``title``; mention: ``email``/``displayName``)
+    so they interop. Re-emits the block's inline runs (like ``toggle_mark``).
+    """
+    block = _resolve_block(_fragment(doc, fragment_name), block_index)
+    segs = _read_segments(block)
+    new_segs = _split_and_insert(
+        segs, offset, {"kind": "element", "name": name, "attrs": dict(attrs)}
+    )
+    with doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
+        existing = _child_count(block)
+        if existing:
+            block.delete(txn, 0, existing)
+        _emit_segments(txn, block, new_segs)
