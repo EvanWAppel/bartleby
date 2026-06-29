@@ -38,7 +38,7 @@ from textual.binding import BindingType
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.timer import Timer
-from textual.widgets import Footer, Header, Input, OptionList
+from textual.widgets import Footer, Header, Input, Label, OptionList
 from textual.widgets.option_list import Option
 
 from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
@@ -49,12 +49,14 @@ from bartleby_tui.notes_api import (
     Note,
     create_note,
     delete_note,
+    fetch_backlinks,
     fetch_notes,
     rename_note,
     restore_note,
     search_notes,
 )
 from bartleby_tui.notes_list import NotesList
+from bartleby_tui.panes import BacklinksPane
 from bartleby_tui.renderer import Block, ydoc_to_blocks
 from bartleby_tui.status_bar import StatusBar
 
@@ -151,6 +153,23 @@ class BartlebyApp(App[None]):
         padding: 0;
     }
 
+    #right-pane {
+        display: none;
+        width: 28;
+        min-width: 18;
+        border-left: solid $primary;
+        padding: 1;
+    }
+
+    #right-pane.visible {
+        display: block;
+    }
+
+    #right-pane-title {
+        text-style: bold;
+        padding: 0 0 1 0;
+    }
+
     /* StatusBar carries its own DEFAULT_CSS; nothing to override here. */
     """
 
@@ -201,6 +220,8 @@ class BartlebyApp(App[None]):
         self._active_tag: str | None = None
         # T-010 CRUD: last soft-deleted note id, so `R` can restore it.
         self._last_deleted: str | None = None
+        # T-012 inbound-links pane (right side), toggled by `g b`.
+        self._backlinks_pane: BacklinksPane | None = None
 
     @property
     def body_text(self) -> str:
@@ -241,6 +262,13 @@ class BartlebyApp(App[None]):
                 editor = StructuredEditor(self._doc, id="editor")
                 self._editor = editor
                 yield editor
+            # T-012: collapsible right pane (inbound links; comments/history join
+            # it later). Hidden until a `g<key>` chord toggles it.
+            with Vertical(id="right-pane"):
+                yield Label("Backlinks", id="right-pane-title")
+                backlinks_pane = BacklinksPane(id="backlinks-pane")
+                self._backlinks_pane = backlinks_pane
+                yield backlinks_pane
         # T-018: connection state + presence. on_status_change/on_awareness_change
         # drive set_connected/set_peers on this widget.
         status_bar = StatusBar(id="status-bar")
@@ -347,15 +375,45 @@ class BartlebyApp(App[None]):
         """T-020: `?` opens the scrollable keybind reference."""
         self.push_screen(HelpModal())
 
+    async def on_structured_editor_go_to_requested(
+        self, message: StructuredEditor.GoToRequested
+    ) -> None:
+        """Route a `g<key>` chord to its pane. T-012 owns `g b` (backlinks)."""
+        if message.target == "b":
+            await self._toggle_backlinks_pane()
+
+    async def _toggle_backlinks_pane(self) -> None:
+        """Show/hide the inbound-links pane; populate it from the current note."""
+        if self._backlinks_pane is None:
+            return
+        right = self.query_one("#right-pane")
+        if right.has_class("visible"):
+            right.remove_class("visible")
+            if self._editor is not None:
+                self._editor.focus()
+            return
+        note_id = self._current_note_id()
+        links = (
+            await fetch_backlinks(self._http_base_url, note_id, self._access_token)
+            if note_id is not None and self._http_base_url is not None
+            else []
+        )
+        self._backlinks_pane.set_backlinks(links)
+        right.add_class("visible")
+        self._backlinks_pane.focus()
+
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Route a selection: a notes-list row opens a note; a tag-picker row
-        applies (or toggles off) that tag filter."""
+        """Route a selection: a notes-list row or backlink row opens a note;
+        a tag-picker row applies (or toggles off) that tag filter."""
         if self._tag_picker is not None and event.option_list is self._tag_picker:
             tag = event.option.id
             if tag is not None:
                 self._apply_tag_filter(tag)
             return
-        if self._notes_view is not None and event.option_list is self._notes_view:
+        opens_note = event.option_list is self._notes_view or (
+            event.option_list is self._backlinks_pane
+        )
+        if opens_note:
             note_id = event.option.id
             if note_id is not None:
                 await self.open_note(note_id)
