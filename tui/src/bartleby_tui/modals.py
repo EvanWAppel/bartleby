@@ -12,8 +12,19 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label, Static
+from textual.widgets import Input, Label, OptionList, Static
+from textual.widgets.option_list import Option
+
+
+def _fuzzy_match(query: str, label: str) -> bool:
+    """Case-insensitive subsequence match (palette filtering)."""
+    q = query.lower().strip()
+    if not q:
+        return True
+    chars = iter(label.lower())
+    return all(ch in chars for ch in q)
 
 
 class RenameModal(ModalScreen[str | None]):
@@ -209,6 +220,82 @@ class HelpModal(ModalScreen[None]):
         # Only intercept the dismiss keys; scroll keys fall through to the
         # focused VerticalScroll (which handles them first as it bubbles up).
         if event.key in ("escape", "question_mark"):
+            event.stop()
+            event.prevent_default()
+            self.dismiss(None)
+
+
+class CommandPalette(ModalScreen[None]):
+    """`:` command palette (T-021). Fuzzy-filters entries (commands + note
+    titles); Enter runs the top match, posting ``Selected(entry_id)``."""
+
+    class Selected(Message):
+        def __init__(self, entry_id: str) -> None:
+            super().__init__()
+            self.entry_id = entry_id
+
+    DEFAULT_CSS = """
+    CommandPalette {
+        align: center top;
+    }
+    #palette-dialog {
+        width: 60;
+        height: auto;
+        max-height: 80%;
+        margin: 4 0 0 0;
+        padding: 1 1;
+        border: round $primary;
+        background: $surface;
+    }
+    #palette-list {
+        height: auto;
+        max-height: 14;
+    }
+    """
+
+    def __init__(self, entries: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self._entries = entries  # (entry_id, label)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="palette-dialog"):
+            yield Input(placeholder="command or note…", id="palette-input")
+            yield OptionList(id="palette-list")
+
+    def on_mount(self) -> None:
+        self._populate("")
+        self.query_one("#palette-input", Input).focus()
+
+    def _populate(self, query: str) -> None:
+        option_list = self.query_one("#palette-list", OptionList)
+        option_list.clear_options()
+        for entry_id, label in self._entries:
+            if _fuzzy_match(query, label):
+                option_list.add_option(Option(label, id=entry_id))
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self._populate(event.value)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        # Enter in the box runs the top match.
+        event.stop()
+        option_list = self.query_one("#palette-list", OptionList)
+        if option_list.option_count > 0:
+            self._choose(option_list.get_option_at_index(0).id)
+        else:
+            self.dismiss(None)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self._choose(event.option.id)
+
+    def _choose(self, entry_id: str | None) -> None:
+        if entry_id is not None:
+            self.post_message(self.Selected(entry_id))
+        self.dismiss(None)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
             event.stop()
             event.prevent_default()
             self.dismiss(None)
