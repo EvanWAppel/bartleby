@@ -139,4 +139,4 @@ async def test_selecting_mention_marks_read_and_navigates(server: _Server) -> No
 
         assert server.mentions[first_id]["read_at"] is not None  # marked read
         assert inbox.unread_count == 1  # unread count dropped
-        assert app._doc_name == f"note:{server.mentions[first_id]['note_id']}"  # navigated
+        assert app._doc_name == f"{server.mentions[first_id]['note_id']}"  # navigated
