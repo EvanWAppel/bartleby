@@ -167,6 +167,26 @@ async def resolve_comment(
     await asyncio.to_thread(_request_json_sync, "PATCH", url, None, access_token)
 
 
+async def fetch_users(http_base_url: str, access_token: str | None = None) -> list[tuple[str, str]]:
+    """GET ``/users`` (W-013); return ``(email, display_name)`` for the @picker.
+
+    ``display_name`` falls back to the email for allowlisted users who haven't
+    signed in yet.
+    """
+    url = f"{http_base_url.rstrip('/')}/users"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    rows = _require_list(data, "users")
+    out: list[tuple[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise NotesApiError("users[] entry must be an object")
+        obj = cast("Mapping[str, object]", row)
+        email = _require_str(obj, "email")
+        display = obj.get("display_name")
+        out.append((email, display if isinstance(display, str) and display else email))
+    return out
+
+
 async def fetch_snapshots(
     http_base_url: str, note_id: str, access_token: str | None = None
 ) -> list[Snapshot]:

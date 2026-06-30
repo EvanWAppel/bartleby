@@ -248,3 +248,24 @@ def test_delete_range_at_nested_path() -> None:
     editing.delete_range(doc, (0, 0), 0, 3)
     leaf = ydoc_to_blocks(doc)[0].children[0]
     assert "".join(i.text for i in leaf.inlines) == "def"
+
+
+# ----------------------------------------------------------------- insert_atom
+
+
+def test_insert_atom_backlink_splits_text() -> None:
+    doc = _new_doc(("paragraph", "see end"))
+    editing.insert_atom(doc, 0, 4, "backlink", {"targetId": "n1", "title": "Target"})
+    inlines = ydoc_to_blocks(doc)[0].inlines
+    assert inlines[0].text == "see "
+    backlinks = [i for i in inlines if i.atom_kind == "backlink"]
+    assert backlinks and backlinks[0].target_id == "n1"
+    assert inlines[-1].text == "end"
+
+
+def test_insert_atom_mention_at_end() -> None:
+    doc = _new_doc(("paragraph", "hi "))
+    editing.insert_atom(doc, 0, 3, "mention", {"email": "a@b.com", "displayName": "Alice"})
+    inlines = ydoc_to_blocks(doc)[0].inlines
+    mentions = [i for i in inlines if i.atom_kind == "mention"]
+    assert mentions and "Alice" in mentions[0].text

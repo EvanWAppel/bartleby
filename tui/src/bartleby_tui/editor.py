@@ -133,6 +133,12 @@ class StructuredEditor(Static):
     class CommandRequested(Message):
         """Posted on ``:`` in normal mode (T-021 command palette)."""
 
+    class BacklinkPickerRequested(Message):
+        """Posted when ``[[`` is typed in insert mode (T-006 backlink picker)."""
+
+    class MentionPickerRequested(Message):
+        """Posted when ``@`` is typed in insert mode (T-006 mention picker)."""
+
     class GoToRequested(Message):
         """Posted on a ``g<key>`` chord in normal mode (T-012+ pane toggles).
 
@@ -292,12 +298,49 @@ class StructuredEditor(Static):
             self._handle_space()
         elif event.is_printable and event.character is not None:
             self._insert_text(event.character)
+            self._maybe_trigger_picker(event.character)
+
+    def _maybe_trigger_picker(self, char: str) -> None:
+        """T-006: `@` opens the mention picker; `[[` opens the backlink picker.
+
+        The trigger characters land in the doc; the app shows a picker (the
+        query is typed there, not the doc) and calls back into ``insert_*`` to
+        replace the trigger with an atom.
+        """
+        if char == "@":
+            self.post_message(self.MentionPickerRequested())
+        elif char == "[" and self._leaf_text_before_caret().endswith("[["):
+            self.post_message(self.BacklinkPickerRequested())
+
+    def _leaf_text_before_caret(self) -> str:
+        blocks = ydoc_to_blocks(self._doc)
+        leaf = _block_at_path(blocks, self._caret_path)
+        if leaf is None:
+            return ""
+        text = "".join(i.text for i in leaf.inlines if i.atom_kind is None)
+        return text[: self._caret_offset]
 
     # --------------------------------------------------------------- editing
 
     def _insert_text(self, text: str) -> None:
         editing.insert_text(self._doc, self._caret_path, self._caret_offset, text)
         self._caret_offset += len(text)
+
+    def insert_backlink(self, target_id: str, title: str) -> None:
+        """Replace the ``[[`` trigger before the caret with a backlink atom."""
+        self._insert_atom_at_trigger(2, "backlink", {"targetId": target_id, "title": title})
+
+    def insert_mention(self, email: str, display_name: str) -> None:
+        """Replace the ``@`` trigger before the caret with a mention atom."""
+        self._insert_atom_at_trigger(1, "mention", {"email": email, "displayName": display_name})
+
+    def _insert_atom_at_trigger(self, trigger_len: int, name: str, attrs: dict[str, str]) -> None:
+        start = max(0, self._caret_offset - trigger_len)
+        if self._caret_offset > start:
+            editing.delete_range(self._doc, self._caret_path, start, self._caret_offset)
+        editing.insert_atom(self._doc, self._caret_path, start, name, attrs)
+        self._caret_offset = start + 1  # the atom occupies one caret position
+        self.refresh_view()
 
     def _backspace(self) -> None:
         if self._caret_offset > 0:
