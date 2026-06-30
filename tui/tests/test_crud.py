@@ -152,7 +152,7 @@ async def test_n_creates_and_opens_note(server: _Server) -> None:
 
         assert len(server.notes) == 1
         new_id = next(iter(server.notes))
-        assert app._doc_name == f"note:{new_id}"
+        assert app._doc_name == f"{new_id}"
 
 
 async def test_r_renames_current_note(server: _Server) -> None:

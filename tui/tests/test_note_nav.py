@@ -74,7 +74,7 @@ async def test_open_note_switches_room_and_document() -> None:
         await app.open_note("note-123")
         await pilot.pause()
 
-        assert app._doc_name == "note:note-123"
+        assert app._doc_name == "note-123"
         # Typing now lands in the new note's document.
         await pilot.press("h", "i")
         await pilot.pause()
@@ -82,7 +82,7 @@ async def test_open_note_switches_room_and_document() -> None:
 
 
 async def test_open_note_is_noop_for_current_note() -> None:
-    app = BartlebyApp(connect_on_mount=False, doc_name="note:abc")
+    app = BartlebyApp(connect_on_mount=False, doc_name="abc")
     async with app.run_test() as pilot:
         await pilot.pause()
         doc_before = app._doc
@@ -108,7 +108,7 @@ async def test_selecting_a_note_row_opens_it() -> None:
         await pilot.press("enter")  # select it
         await pilot.pause()
 
-        assert app._doc_name == "note:n1"
+        assert app._doc_name == "n1"
 
 
 # --------------------------------------------------------------- reconnect (CI)
@@ -117,7 +117,7 @@ async def test_selecting_a_note_row_opens_it() -> None:
 async def test_open_note_loads_remote_content(hocuspocus_server: str) -> None:
     """Opening a note reconnects to its room and renders existing content."""
     note_id = f"nav-{id(object())}"
-    room = f"note:{note_id}"
+    room = f"{note_id}"
 
     # Pre-seed the note's room with content via a separate peer.
     seed_doc = Y.YDoc()
