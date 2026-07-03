@@ -3,7 +3,7 @@
 # ----- deps -----
 # Install ALL deps (including dev) so we can run tsc. Native bindings
 # (better-sqlite3) get compiled here for the runtime architecture.
-FROM node:22-slim AS deps
+FROM node:26-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -22,7 +22,7 @@ RUN npm run build
 
 # ----- runtime -----
 # Slim runtime: only production deps + compiled dist/. Non-root user.
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=1234
