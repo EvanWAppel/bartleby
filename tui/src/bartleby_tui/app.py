@@ -403,15 +403,21 @@ class BartlebyApp(App[None]):
             self._editor.refresh_view()
 
     async def open_note(self, note_id: str) -> None:
-        """Switch the editor to note ``note_id`` (Hocuspocus room ``note:<id>``).
+        """Switch the editor to note ``note_id``.
 
-        Tears down the current room's connection, swaps in a fresh YDoc, points
-        the editor at it, and (when online) reconnects to the new room. A no-op
-        if we're already on that note.
+        The Hocuspocus room name **is** the bare note id — that's what the web
+        client (``room={data.id}``) and the server's derived hook
+        (``findById(documentName)``) use, so this is what makes the TUI and web
+        live peers on the same document. Tears down the current connection,
+        swaps in a fresh YDoc, points the editor at it, and (when online)
+        reconnects. A no-op if we're already on that note.
         """
-        doc_name = f"note:{note_id}"
-        if doc_name == self._doc_name:
+        if note_id == self._doc_name:
             return
+        doc_name = note_id
+        if self.connection is not None:
+            await self.connection.__aexit__(None, None, None)
+            self.connection = None
         if self.connection is not None:
             await self.connection.__aexit__(None, None, None)
             self.connection = None
@@ -879,11 +885,13 @@ class BartlebyApp(App[None]):
     # ------------------------------------------------------------------ T-010 CRUD
 
     def _current_note_id(self) -> str | None:
-        """The note id the editor is on, parsed from the ``note:<id>`` room."""
-        prefix = "note:"
-        if self._doc_name.startswith(prefix):
-            return self._doc_name[len(prefix) :]
-        return None
+        """The note id the editor is on (the room name is the bare note id).
+
+        ``None`` while on the Phase-0 ``vertical-slice`` fallback room (no note).
+        """
+        if self._doc_name == DEFAULT_DOC_NAME:
+            return None
+        return self._doc_name
 
     def _title_of(self, note_id: str) -> str:
         for note in self._all_notes:

@@ -141,4 +141,4 @@ async def test_selecting_backlink_opens_source(server: _Server) -> None:
         await pilot.press("enter")
         await pilot.pause()
 
-        assert app._doc_name == "note:src-1"
+        assert app._doc_name == "src-1"

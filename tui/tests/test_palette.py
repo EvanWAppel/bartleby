@@ -129,7 +129,7 @@ async def test_selecting_note_opens_it(server: _Server) -> None:
         await _type(pilot, app, "alpha")
         await pilot.press("enter")
         await pilot.pause()
-        assert app._doc_name == f"note:{nid}"
+        assert app._doc_name == f"{nid}"
 
 
 async def test_command_new_note_runs(server: _Server) -> None:
@@ -143,4 +143,4 @@ async def test_command_new_note_runs(server: _Server) -> None:
         await pilot.pause()
         await pilot.pause()
         assert len(server.notes) == 1  # `new note` command created one
-        assert app._doc_name == f"note:{server.notes[0]['id']}"
+        assert app._doc_name == f"{server.notes[0]['id']}"

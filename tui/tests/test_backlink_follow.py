@@ -63,11 +63,11 @@ async def test_enter_on_backlink_opens_target_note() -> None:
         await pilot.press("enter")  # follow the backlink
         await pilot.pause()
 
-        assert app._doc_name == "note:tgt-note"
+        assert app._doc_name == "tgt-note"
 
 
 async def test_enter_without_backlink_does_not_navigate() -> None:
-    app = BartlebyApp(connect_on_mount=False, doc_name="note:start")
+    app = BartlebyApp(connect_on_mount=False, doc_name="start")
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app._editor is not None
@@ -75,4 +75,4 @@ async def test_enter_without_backlink_does_not_navigate() -> None:
         await pilot.press("escape")
         await pilot.press("enter")
         await pilot.pause()
-        assert app._doc_name == "note:start"  # unchanged — no link to follow
+        assert app._doc_name == "start"  # unchanged — no link to follow

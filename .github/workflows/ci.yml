@@ -101,6 +101,18 @@ jobs:
       - name: Unit tests (vitest)
         run: npm test
 
+      # Q-002's web↔TUI e2e spawns a real y-py TUI peer
+      # (tui/tests/q002_tui_peer.py via `uv run`), so the Playwright job needs
+      # uv + the tui deps available alongside the browser stack.
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Sync TUI deps (for the Q-002 web↔TUI peer)
+        working-directory: tui
+        run: uv sync --frozen
+
       - name: E2E tests (playwright)
         run: npm run test:e2e
 

@@ -158,7 +158,7 @@ async def test_enter_opens_top_result(mock_server: _MockServer) -> None:
         await pilot.press("enter")
         await pilot.pause()
 
-        assert app._doc_name == f"note:{top}"
+        assert app._doc_name == f"{top}"
 
 
 async def test_escape_closes_search_and_restores_list(mock_server: _MockServer) -> None:
