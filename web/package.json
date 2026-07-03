@@ -40,7 +40,7 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "@hocuspocus/provider": "^4.1.0",
+    "@hocuspocus/provider": "^4.3.0",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-history": "^1.5.0",
     "prosemirror-inputrules": "^1.5.1",
