@@ -104,7 +104,7 @@ jobs:
       # Q-002's web↔TUI e2e spawns a real y-py TUI peer
       # (tui/tests/q002_tui_peer.py via `uv run`), so the Playwright job needs
       # uv + the tui deps available alongside the browser stack.
-      - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: '3.12'
@@ -144,7 +144,7 @@ jobs:
         working-directory: server
         run: npm ci
 
-      - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           cache-dependency-glob: 'tui/uv.lock'
