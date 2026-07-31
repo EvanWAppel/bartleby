@@ -8,7 +8,7 @@
     "dev": "concurrently -k -n server,web,tui -c blue,green,magenta \"npm --prefix server run dev\" \"npm --prefix web run dev\" \"cd tui && uv run bartleby-tui\""
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
+    "concurrently": "^10.0.4",
     "husky": "^9.1.0"
   }
 }
