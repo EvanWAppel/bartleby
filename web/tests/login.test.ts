@@ -24,6 +24,26 @@ test.describe('unauthed', () => {
     const href = await link.getAttribute('href');
     expect(href).toMatch(/^\/auth\/google\/start\?next=/);
   });
+
+  test('dev sign-in form is present (ALLOW_TEST_SIGN_IN) and seeds the first allowlist email', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    await expect(page.getByTestId('dev-signin')).toBeVisible();
+    // playwright.config seeds BARTLEBY_ALLOWED_EMAILS with test@example.com first.
+    await expect(page.getByTestId('dev-signin-email')).toHaveValue('test@example.com');
+  });
+
+  test('dev sign-in signs in and lands on ?next', async ({ browser }) => {
+    // Fresh context so no prior cookie bounces us off /login first.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto('/login?next=%2Fn%2Fabc');
+    await page.getByTestId('dev-signin-email').fill('alice@example.com');
+    await page.getByTestId('dev-signin-button').click();
+    await expect(page).toHaveURL(/\/n\/abc$/);
+    await context.close();
+  });
 });
 
 test.describe('authed', () => {

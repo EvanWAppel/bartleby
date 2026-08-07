@@ -79,6 +79,11 @@ export default defineConfig({
         // so it needs the same SESSION_SECRET the bartleby server (and
         // the test auth helper) use.
         SESSION_SECRET: bartlebyServerEnv.SESSION_SECRET,
+        // Surfaces the dev sign-in form on /login (login/+page.server.ts
+        // gates it on this flag, mirroring the bartleby server's gate on
+        // POST /auth/dev/sign-in). NEVER set in production.
+        ALLOW_TEST_SIGN_IN: bartlebyServerEnv.ALLOW_TEST_SIGN_IN,
+        BARTLEBY_ALLOWED_EMAILS: bartlebyServerEnv.BARTLEBY_ALLOWED_EMAILS,
       },
     },
     {
