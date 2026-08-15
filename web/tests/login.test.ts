@@ -39,6 +39,12 @@ test.describe('unauthed', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto('/login?next=%2Fn%2Fabc');
+    // The form is SSR-rendered, so the button exists in the DOM before
+    // hydration attaches the onsubmit handler. Clicking too early lets the
+    // native GET form submission fire (email input has no `name`), which
+    // navigates to /login? and loses the sign-in. Wait for hydration via
+    // load-state before interacting — same idiom as trash-view.test.ts.
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('dev-signin-email').fill('alice@example.com');
     await page.getByTestId('dev-signin-button').click();
     await expect(page).toHaveURL(/\/n\/abc$/);
