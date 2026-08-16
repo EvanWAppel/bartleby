@@ -22,6 +22,7 @@
 import { Hono, type Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
+import type { SnapshotSummary, SnapshotDetail } from '@bartleby/shared';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import { extractMarkdown } from '../derived/markdown.js';
@@ -58,20 +59,12 @@ function nowIso(deps: SnapshotsAppDeps): string {
   return (deps.now ?? (() => new Date()))().toISOString();
 }
 
-interface SnapshotDto {
-  id: string;
-  note_id: string;
-  label: string | null;
-  created_at: string;
-  /** Base64-encoded yjs_state. Only included on the single-snapshot
-   * detail/preview path; the list endpoint omits it to keep responses
-   * bounded. */
-  yjs_state_base64?: string;
-  /** Markdown rendering of the snapshot's content, served alongside
-   * yjs_state_base64 so the preview pane doesn't have to pull in Yjs
-   * to render the snapshot. */
-  markdown_preview?: string;
-}
+// Union of the two @bartleby/shared wire shapes: the list path returns a
+// SnapshotSummary; the detail/preview path returns a SnapshotDetail (adds
+// yjs_state_base64 + markdown_preview). Kept as one type here because the
+// handlers below build both variants through it.
+type SnapshotDto = SnapshotSummary &
+  Partial<Pick<SnapshotDetail, 'yjs_state_base64' | 'markdown_preview'>>;
 
 function decodeSnapshotToMarkdown(yjsState: Buffer): string {
   const doc = new Y.Doc();

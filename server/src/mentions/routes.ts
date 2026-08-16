@@ -10,6 +10,7 @@
 // inbox.
 
 import { Hono } from 'hono';
+import type { MentionDto } from '@bartleby/shared';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import type { MentionRow } from '../db/repositories/index.js';
@@ -23,12 +24,6 @@ export interface MentionsAppDeps {
 
 function nowIso(deps: MentionsAppDeps): string {
   return (deps.now ?? (() => new Date()))().toISOString();
-}
-
-interface MentionDto extends MentionRow {
-  /** Convenience field — the title of the source note, looked up via
-   * notes table. Saves the client an N+1 to render the inbox row. */
-  note_title: string;
 }
 
 export function createMentionsApp(deps: MentionsAppDeps): Hono<{ Variables: AuthVars }> {

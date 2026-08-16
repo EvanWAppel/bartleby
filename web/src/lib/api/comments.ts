@@ -2,17 +2,11 @@
 // Mirrors the server's CommentRow shape (snake_case) verbatim — the
 // pane component does its own camelCase mapping for readability.
 
-export interface CommentDto {
-  id: string;
-  note_id: string;
-  author_id: string;
-  parent_comment_id: string | null;
-  anchor: string;
-  original_quote: string;
-  body: string;
-  created_at: string;
-  resolved_at: string | null;
-}
+import type { CommentDto } from '@bartleby/shared';
+
+// Re-export so components importing CommentDto from this module are
+// unaffected by the move to the shared wire contract.
+export type { CommentDto };
 
 export class CommentsApiError extends Error {
   readonly status: number;

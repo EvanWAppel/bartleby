@@ -16,20 +16,13 @@
 // same way notes/search are composed.
 
 import { Hono } from 'hono';
+import type { UserWire } from '@bartleby/shared';
 import type { EmailAllowlist } from '../auth/allowlist.js';
 import type { AuthVars, SessionStore } from '../auth/index.js';
 
 export interface UsersAppDeps {
   allowlist: EmailAllowlist;
   store: SessionStore;
-}
-
-interface UsersRow {
-  email: string;
-  display_name: string | null;
-  user_id: string | null;
-  color: string | null;
-  signed_in: boolean;
 }
 
 export function createUsersApp(deps: UsersAppDeps): Hono<{ Variables: AuthVars }> {
@@ -39,7 +32,7 @@ export function createUsersApp(deps: UsersAppDeps): Hono<{ Variables: AuthVars }
     const allowlistEmails = deps.allowlist.values();
     const signedIn = await deps.store.listUsers();
     const signedInByEmail = new Map(signedIn.map((u) => [u.email, u]));
-    const rows: UsersRow[] = allowlistEmails
+    const rows: UserWire[] = allowlistEmails
       .map((email) => {
         const user = signedInByEmail.get(email);
         if (user === undefined) {
