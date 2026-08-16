@@ -44,7 +44,13 @@ from textual.timer import Timer
 from textual.widgets import Footer, Header, Input, Label, OptionList
 from textual.widgets.option_list import Option
 
-from bartleby_tui.auth import TokenStore, UserInfo, ensure_access_token, fetch_user_info
+from bartleby_tui.auth import (
+    EnvironmentTokenStore,
+    TokenStore,
+    UserInfo,
+    ensure_access_token,
+    fetch_user_info,
+)
 from bartleby_tui.connection import HocuspocusConnection
 from bartleby_tui.editor import StructuredEditor
 from bartleby_tui.modals import (
@@ -1001,4 +1007,12 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    BartlebyApp(http_base_url=os.environ.get("BARTLEBY_HTTP_URL")).run()
+    http_base_url = os.environ.get("BARTLEBY_HTTP_URL")
+    note_id = os.environ.get("BARTLEBY_NOTE_ID", DEFAULT_DOC_NAME)
+    access_token = os.environ.get("BARTLEBY_ACCESS_TOKEN")
+    token_store = EnvironmentTokenStore(access_token) if access_token else None
+    BartlebyApp(
+        doc_name=note_id,
+        http_base_url=http_base_url,
+        token_store=token_store,
+    ).run()

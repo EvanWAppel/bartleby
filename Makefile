@@ -1,6 +1,7 @@
 # Bartleby monorepo Makefile.
 #
 # `make dev`       — run server, web, and TUI concurrently
+# `make demo`      — run a seeded, dev-authenticated web + TUI demo
 # `make test`      — run server + web + tui test suites (no e2e)
 # `make test-e2e`  — run Playwright e2e in web (slow; spawns server + vite)
 # `make lint`      — lint all three components
@@ -8,7 +9,7 @@
 # `make install`   — install deps in all three components + root hooks
 # `make clean`     — remove node_modules + .venv + build artifacts
 
-.PHONY: dev test test-e2e lint typecheck install clean
+.PHONY: dev demo test test-e2e lint typecheck install clean
 
 # Default target prints help.
 .DEFAULT_GOAL := help
@@ -17,6 +18,7 @@ help:
 	@echo "Bartleby make targets:"
 	@echo "  make install     Install all deps (root hooks + server + web + tui)"
 	@echo "  make dev         Run server + web + tui concurrently"
+	@echo "  make demo        Run a seeded local web + TUI demo"
 	@echo "  make test        Run all unit/integration test suites"
 	@echo "  make test-e2e    Run Playwright e2e (web)"
 	@echo "  make lint        Lint all three components"
@@ -31,6 +33,9 @@ install:
 
 dev:
 	npm run dev
+
+demo:
+	bash scripts/demo.sh
 
 test:
 	npm --prefix server test

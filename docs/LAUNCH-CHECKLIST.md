@@ -10,6 +10,18 @@ Mirror of the `L-*` tasks in [`TASKS.md`](../TASKS.md). Check items off here as 
 
 Not a launch gate — just how to get it up on your own machine. No Google OAuth needed: the server exposes a test-only `POST /auth/dev/sign-in` when `ALLOW_TEST_SIGN_IN=true`.
 
+For the seeded two-interface demo, run this from the repository root:
+
+```sh
+make demo
+```
+
+The command prints the exact note URL and opens the TUI in the same note. Use the prefilled dev
+sign-in form in the browser. The launcher authorizes the local TUI through the real device-code
+endpoints. `Ctrl+Q` exits the TUI and stops both development servers.
+
+For manual component-by-component startup, use the commands below.
+
 **Start the server** (WS on 1234, HTTP on 3000), from `server/`:
 
 ```sh
@@ -29,19 +41,14 @@ npm run dev
 ```sh
 BARTLEBY_HTTP_PORT=3000 \
 SESSION_SECRET=dev-local-session-secret-change-me-0123456789 \
+BARTLEBY_ALLOWED_EMAILS=appelew@gmail.com \
+ALLOW_TEST_SIGN_IN=true \
 npm run dev
 ```
 
-**Sign in** — there's no dev sign-in button in the UI (the `/login` page only knows how to redirect to Google), so open `http://localhost:5173`, then paste this into the browser devtools console:
-
-```js
-await fetch('/auth/dev/sign-in', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email: 'appelew@gmail.com', displayName: 'Evan' }),
-});
-location.href = '/';
-```
+**Sign in** — open `http://localhost:5173/login` and use the prefilled **Dev sign in** form. The
+form is only rendered when the web process also receives `ALLOW_TEST_SIGN_IN=true` and
+`BARTLEBY_ALLOWED_EMAILS`.
 
 Notes persist to `.dev-data/bartleby.db` across restarts. Vite proxies `/auth`, `/notes`, `/search`, etc. to the server, so the browser sees a single origin.
 
