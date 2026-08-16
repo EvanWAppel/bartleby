@@ -24,6 +24,32 @@ test.describe('unauthed', () => {
     const href = await link.getAttribute('href');
     expect(href).toMatch(/^\/auth\/google\/start\?next=/);
   });
+
+  test('dev sign-in form is present (ALLOW_TEST_SIGN_IN) and seeds the first allowlist email', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    await expect(page.getByTestId('dev-signin')).toBeVisible();
+    // playwright.config seeds BARTLEBY_ALLOWED_EMAILS with test@example.com first.
+    await expect(page.getByTestId('dev-signin-email')).toHaveValue('test@example.com');
+  });
+
+  test('dev sign-in signs in and lands on ?next', async ({ browser }) => {
+    // Fresh context so no prior cookie bounces us off /login first.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto('/login?next=%2Fn%2Fabc');
+    // The form is SSR-rendered, so the button exists in the DOM before
+    // hydration attaches the onsubmit handler. Clicking too early lets the
+    // native GET form submission fire (email input has no `name`), which
+    // navigates to /login? and loses the sign-in. Wait for hydration via
+    // load-state before interacting — same idiom as trash-view.test.ts.
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('dev-signin-email').fill('alice@example.com');
+    await page.getByTestId('dev-signin-button').click();
+    await expect(page).toHaveURL(/\/n\/abc$/);
+    await context.close();
+  });
 });
 
 test.describe('authed', () => {
