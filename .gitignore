@@ -44,3 +44,7 @@ coverage/
 
 # Sub-agent worktrees (live inside the project so spawned agents can reach them)
 .worktrees/
+
+# Portfolio/job-search working brief — internal, names target companies and
+# interview framing. Kept local; must never land in this public repo.
+RECRUITER-PRIMER.md
