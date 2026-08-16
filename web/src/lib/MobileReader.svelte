@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { resolveCollaborationUrl } from '$lib/collaboration-url';
 
   interface Props {
     room?: string;
     serverUrl?: string;
   }
 
-  let { room, serverUrl = 'ws://127.0.0.1:1234' }: Props = $props();
+  let { room, serverUrl }: Props = $props();
 
   let viewEl: HTMLDivElement | null = $state(null);
 
@@ -52,7 +53,7 @@
 
     const ydoc = new Y.Doc();
     const provider = new HocuspocusProvider({
-      url: serverUrl,
+      url: resolveCollaborationUrl(window.location, serverUrl),
       name: resolvedRoom,
       document: ydoc,
     });

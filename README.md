@@ -124,6 +124,9 @@ There's no Google OAuth needed for local play: the server exposes a test-only de
 
 Common developer tasks are `make test`, `make test-e2e`, `make lint`, and `make typecheck` (see `make help`).
 
+For the production single-service Railway setup, required variables, and Google OAuth redirect
+configuration, see [`docs/RAILWAY.md`](docs/RAILWAY.md).
+
 ## Status
 
 Feature-complete against the [PRD](./PRD.md) and [build plan](./TASKS.md): the web and TUI clients, the collaboration server, auth (Google OAuth for web, device-code for the TUI), comments, snapshots, mentions, search, and import/export all ship. The remaining open work is operational rollout — see [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md).

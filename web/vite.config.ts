@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type ProxyOptions } from 'vite';
 
 // Bartleby's API (auth + notes + search + users + comments) runs as a
 // separate Node process on its own port. In dev + tests we proxy those
@@ -24,9 +24,15 @@ const proxiedPrefixes = [
   '/admin',
 ];
 
-const proxy = Object.fromEntries(
+const proxy: Record<string, ProxyOptions> = Object.fromEntries(
   proxiedPrefixes.map((prefix) => [prefix, { target: bartlebyTarget, changeOrigin: false }]),
 );
+
+proxy['/collaboration'] = {
+  target: `ws://127.0.0.1:${process.env.BARTLEBY_WS_PORT ?? '1234'}`,
+  changeOrigin: false,
+  ws: true,
+};
 
 export default defineConfig({
   plugins: [sveltekit()],
