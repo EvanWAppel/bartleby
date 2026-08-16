@@ -123,6 +123,7 @@
   onMount(async () => {
     const [
       Y,
+      { IndexeddbPersistence },
       { HocuspocusProvider },
       { EditorState },
       { EditorView },
@@ -145,6 +146,7 @@
       yProsemirror,
     ] = await Promise.all([
       import('yjs'),
+      import('y-indexeddb'),
       import('@hocuspocus/provider'),
       import('prosemirror-state'),
       import('prosemirror-view'),
@@ -173,6 +175,15 @@
       room ?? new URLSearchParams(window.location.search).get('room') ?? 'vertical-slice';
 
     const ydoc = new Y.Doc();
+    // Keep every local Yjs update in IndexedDB before opening the network
+    // provider. If a tab reloads before its WebSocket frame reaches the
+    // server, the next mount replays the update and Hocuspocus stores it.
+    // Include the user id so one browser profile never shares cached note
+    // contents between different signed-in accounts.
+    const persistenceKey = `bartleby:${user?.id ?? 'anonymous'}:${resolvedRoom}`;
+    const localPersistence = new IndexeddbPersistence(persistenceKey, ydoc);
+    await localPersistence.whenSynced;
+
     const provider = new HocuspocusProvider({
       url: resolveCollaborationUrl(window.location, serverUrl),
       name: resolvedRoom,
@@ -608,6 +619,7 @@
       stopWatch();
       view.destroy();
       provider.destroy();
+      void localPersistence.destroy();
       ydoc.destroy();
       notesStore.stop();
       usersStore.stop();
