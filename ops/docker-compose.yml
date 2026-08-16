@@ -13,8 +13,10 @@ name: bartleby
 services:
   bartleby:
     build:
-      context: ../server
-      dockerfile: Dockerfile
+      # Context is the repo root so the build can reach the sibling
+      # `shared/` package that server depends on (file:../shared).
+      context: ..
+      dockerfile: server/Dockerfile
     container_name: bartleby
     restart: unless-stopped
     expose:

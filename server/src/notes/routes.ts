@@ -14,6 +14,7 @@
 
 import { Hono, type Context } from 'hono';
 import { randomUUID } from 'node:crypto';
+import type { NoteSummary } from '@bartleby/shared';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import type { NoteRow } from '../db/repositories/index.js';
@@ -26,14 +27,6 @@ export interface NotesAppDeps {
   repos: Repositories;
   /** Injectable clock so tests can pin timestamps. */
   now?: () => Date;
-}
-
-interface NoteSummary {
-  id: string;
-  title: string;
-  tags: string[];
-  updated_at: string;
-  created_at: string;
 }
 
 function toSummary(row: NoteRow, tags: string[]): NoteSummary {

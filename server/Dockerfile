@@ -1,29 +1,39 @@
 # syntax=docker/dockerfile:1.7
+#
+# NOTE: the build context is the repo ROOT (see ops/docker-compose.yml:
+# `context: ..`), not server/. That's so the build can reach the sibling
+# `shared/` package — the server depends on it via `file:../shared`. The
+# image mirrors the repo layout: server at /app/server, shared at /app/shared,
+# so the relative dependency path resolves inside the container too.
 
 # ----- deps -----
 # Install ALL deps (including dev) so we can run tsc. Native bindings
 # (better-sqlite3) get compiled here for the runtime architecture.
 FROM node:22-slim AS deps
-WORKDIR /app
+WORKDIR /app/server
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
   && rm -rf /var/lib/apt/lists/*
-COPY package.json package-lock.json ./
+# shared/ must exist before `npm ci` so the file:../shared dep resolves.
+COPY shared /app/shared
+COPY server/package.json server/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 # ----- build -----
 FROM deps AS build
-COPY tsconfig.json ./
-COPY src ./src
+COPY server/tsconfig.json ./
+COPY server/src ./src
 RUN npm run build
 
 # ----- runtime -----
 # Slim runtime: only production deps + compiled dist/. Non-root user.
+# @bartleby/shared is a devDependency (types only, erased at build time), so
+# --omit=dev skips it; the compiled dist/ has no runtime reference to it.
 FROM node:22-slim AS runtime
-WORKDIR /app
+WORKDIR /app/server
 ENV NODE_ENV=production
 ENV PORT=1234
 # Bind every interface in container; Caddy fronts in production.
@@ -31,11 +41,14 @@ ENV BARTLEBY_BIND_ADDRESS=0.0.0.0
 # better-sqlite3's prebuilt binary works without g++, but if a node-gyp
 # rebuild is ever needed at runtime, install those tools manually.
 
-COPY package.json package-lock.json ./
+# shared/ present so the file:../shared entry in the lockfile resolves even
+# though --omit=dev prunes it from the install.
+COPY shared /app/shared
+COPY server/package.json server/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev
 
-COPY --from=build /app/dist ./dist
+COPY --from=build /app/server/dist ./dist
 
 # Persist the SQLite file outside the image layer (compose mounts a
 # volume at /data and BARTLEBY_DB_PATH defaults there).
