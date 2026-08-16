@@ -9,7 +9,7 @@
 # ----- deps -----
 # Install ALL deps (including dev) so we can run tsc. Native bindings
 # (better-sqlite3) get compiled here for the runtime architecture.
-FROM node:22-slim AS deps
+FROM node:26-slim AS deps
 WORKDIR /app/server
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -32,7 +32,7 @@ RUN npm run build
 # Slim runtime: only production deps + compiled dist/. Non-root user.
 # @bartleby/shared is a devDependency (types only, erased at build time), so
 # --omit=dev skips it; the compiled dist/ has no runtime reference to it.
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 WORKDIR /app/server
 ENV NODE_ENV=production
 ENV PORT=1234
