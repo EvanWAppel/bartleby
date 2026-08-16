@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 COPY shared /app/shared
 COPY server/package.json server/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 FROM server-deps AS server-build
 COPY server/tsconfig.json ./
@@ -24,7 +24,7 @@ WORKDIR /app/web
 COPY shared /app/shared
 COPY web/package.json web/package-lock.json ./
 COPY web/patches ./patches
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 COPY web ./
 RUN npm run build
 
