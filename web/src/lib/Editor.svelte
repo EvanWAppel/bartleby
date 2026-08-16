@@ -11,6 +11,7 @@
   import { UsersStore } from '$lib/state/users-store.svelte';
   import { getCommentsStore } from '$lib/state/comments-store.svelte';
   import { createComment } from '$lib/api/comments';
+  import { resolveCollaborationUrl } from '$lib/collaboration-url';
   import type { ToolbarActions } from '$lib/editor/actions';
 
   // W-014 / C-001: the current user's identity flows from
@@ -32,7 +33,7 @@
     user?: UserProp;
   }
 
-  let { room, serverUrl = 'ws://127.0.0.1:1234', user }: Props = $props();
+  let { room, serverUrl, user }: Props = $props();
 
   let editorEl: HTMLDivElement | null = $state(null);
   let actions: ToolbarActions | null = $state(null);
@@ -173,7 +174,7 @@
 
     const ydoc = new Y.Doc();
     const provider = new HocuspocusProvider({
-      url: serverUrl,
+      url: resolveCollaborationUrl(window.location, serverUrl),
       name: resolvedRoom,
       document: ydoc,
     });

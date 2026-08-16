@@ -1,0 +1,32 @@
+{
+	admin off
+	auto_https off
+}
+
+:{$PORT:8080} {
+	encode zstd gzip
+
+	@collaboration path /collaboration /collaboration/*
+	reverse_proxy @collaboration 127.0.0.1:1234
+
+	@health path /health
+	reverse_proxy @health 127.0.0.1:1234
+
+	@api path \
+ /auth /auth/* \
+ /comments /comments/* \
+ /device /device/* \
+ /export /export/* \
+ /mentions /mentions/* \
+ /notes /notes/* \
+ /search /search/* \
+ /users /users/*
+	reverse_proxy @api 127.0.0.1:3000
+
+	reverse_proxy 127.0.0.1:3001
+
+	log {
+		output stdout
+		format json
+	}
+}
