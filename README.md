@@ -9,10 +9,8 @@ Bartleby is a self-hosted, real-time collaborative notes app for a small group o
 <p align="center">
   <img src="docs/media/two-interface-demo.gif" alt="A web editor and a terminal UI editing the same note in real time — text typed in one client appears live in the other" width="800">
   <br>
-  <em>The web editor (left) and the terminal UI (right) editing the same note. Text typed in one client appears live in the other.</em>
+  <em>The web editor and terminal UI editing the same note. Text typed in one client appears live in the other.</em>
 </p>
-
-> The demo GIF lives in [`docs/media/`](docs/media/). If it isn't rendering yet, see that folder's README for how it's recorded.
 
 ## Why it's interesting
 
