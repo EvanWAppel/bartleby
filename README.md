@@ -84,6 +84,25 @@ Install everything (root hooks + all three components):
 make install
 ```
 
+### Try the two-interface demo
+
+Run one command from the repository root:
+
+```sh
+make demo
+```
+
+The launcher starts the server and web client with dev-only authentication, reuses or creates a
+note named **Web + TUI live demo**, and opens the TUI directly in that note. Open the printed web
+URL and use the prefilled **Dev sign in** form. The launcher authorizes the local TUI through the
+real device-code endpoints, so both clients arrive in the same note without additional setup.
+Edits in either client then appear live in the other. Exit the TUI with `Ctrl+Q` to stop the
+complete demo stack.
+
+Demo data persists in `.dev-data/bartleby.db`; service logs are written alongside it when startup
+diagnostics are needed. The launcher requires `curl` and `jq` in addition to the normal project
+toolchains.
+
 Run the server, web client, and TUI together:
 
 ```sh
@@ -103,7 +122,7 @@ cd web && npm install && npm run dev
 cd tui && uv sync && uv run bartleby-tui
 ```
 
-There's no Google OAuth needed for local play: the server exposes a test-only dev sign-in when `ALLOW_TEST_SIGN_IN=true`. See [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md) (Part 0) for the exact one-command local setup, and each component's own README for details.
+There's no Google OAuth needed for local play: the server exposes a test-only dev sign-in when `ALLOW_TEST_SIGN_IN=true`. See [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md) (Part 0) for the expanded manual setup, and each component's own README for details.
 
 Common developer tasks are `make test`, `make test-e2e`, `make lint`, and `make typecheck` (see `make help`).
 

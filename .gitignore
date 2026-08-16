@@ -24,6 +24,7 @@ __pycache__/
 *.db-wal
 *.sqlite
 *.sqlite3
+.dev-data/
 
 # Editor / OS
 .DS_Store

@@ -88,6 +88,20 @@ class KeyringTokenStore:
         )
 
 
+@dataclass(frozen=True)
+class EnvironmentTokenStore:
+    """Read a pre-issued access token without persisting it to the keyring."""
+
+    access_token: str
+
+    def load(self) -> TokenSet:
+        return TokenSet(access_token=self.access_token, refresh_token="", expires_at=float("inf"))
+
+    def save(self, tokens: TokenSet) -> None:
+        del tokens
+        raise RuntimeError("environment access-token store is read-only")
+
+
 class DeviceAuthError(RuntimeError):
     """Raised when the device-code flow cannot complete."""
 
