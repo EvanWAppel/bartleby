@@ -1,14 +1,10 @@
 // Auth gate: validate the session cookie LOCALLY (no /auth/me round-trip)
 // using the same SESSION_SECRET the bartleby server uses to sign it.
 //
-// Why not /auth/me? A's SessionStore is still in-memory per A's TODO —
-// a user only lands in it via the real OAuth callback. Tests + dev
-// can't realistically perform that callback. JWT-validate-locally
-// gives SvelteKit a self-sufficient auth gate without depending on
-// the server's in-memory state. The bartleby server still enforces
-// the same gate on its /notes etc. routes independently — and once A
-// swaps SessionStore for the D-backed store, both sides will agree
-// on the same user identity automatically.
+// Why not /auth/me? JWT validation gives SvelteKit a self-sufficient auth
+// gate and avoids a backend round-trip for every page request. The Bartleby
+// server independently validates the same token and resolves its subject
+// through the SQLite-backed user store before serving protected APIs.
 //
 // Public routes (anything under PUBLIC_PREFIXES) skip the check.
 // Protected routes redirect unauthed users to /login, preserving the

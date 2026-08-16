@@ -23,7 +23,7 @@ import { createBartlebyServer } from './server.js';
 import { createBartlebyHttpServer } from './http.js';
 import { createAutoSnapshotScheduler } from './snapshots/scheduler.js';
 import { createHocuspocusAccessor } from './snapshots/yjs-access.js';
-import { buildSessionConfig, createInMemorySessionStore } from './auth/index.js';
+import { buildSessionConfig, createSqliteUserSessionStore } from './auth/index.js';
 
 export function placeholder(): string {
   return 'bartleby-server';
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   await runMigrations({ db, logger });
   const repos = createRepositories(db);
   const authEnabled = config.PUBLIC_BASE_URL !== undefined && config.PUBLIC_BASE_URL.length > 0;
-  const sharedSessionStore = authEnabled ? createInMemorySessionStore() : undefined;
+  const sharedSessionStore = authEnabled ? createSqliteUserSessionStore(repos.users) : undefined;
   const sharedSessionConfig = authEnabled ? buildSessionConfig(process.env) : undefined;
 
   // 4a. M-005/M-006/M-007 mention-email pipeline. Resend is the

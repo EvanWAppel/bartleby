@@ -22,6 +22,7 @@ export {
   type User,
   type UpsertUserInput,
 } from './store.js';
+export { createSqliteUserSessionStore } from './sqlite-user-store.js';
 export {
   loadGoogleConfig,
   createGoogleClient,

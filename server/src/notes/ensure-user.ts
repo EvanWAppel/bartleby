@@ -1,11 +1,6 @@
-// Bridge: A's SessionStore is in-memory today (per A's TODO in
-// server/src/auth/store.ts), so the user id in the session is NOT
-// guaranteed to exist in D's `users` table. Every S route that writes
-// a note (which has `created_by` FK to users.id) goes through this
-// helper first.
-//
-// When A's TODO swaps SessionStore for a D-backed implementation, this
-// becomes redundant — but it stays harmless (the first branch hits).
+// Bridge for tests and injected SessionStore implementations whose user id
+// may not exist in D's `users` table. Production auth persists identities in
+// SQLite, so its requests normally return from the first branch.
 
 import type { UsersRepository } from '../db/repositories/users.js';
 import type { User } from '../auth/index.js';

@@ -15,7 +15,7 @@ import {
   buildSessionConfig,
   createAuthApp,
   createGoogleClient,
-  createInMemorySessionStore,
+  createSqliteUserSessionStore,
   loadAllowlist,
   loadGoogleConfig,
   requireSession,
@@ -110,9 +110,9 @@ export function buildBartlebyHttpApp(
   const sessionConfig = buildSessionConfig(env);
   const allowlist = loadAllowlist(env);
   const googleConfig = loadGoogleConfig(env);
-  const store = deps.store ?? createInMemorySessionStore();
   const google = createGoogleClient(googleConfig);
   const repos = createRepositories(deps.db);
+  const store = deps.store ?? createSqliteUserSessionStore(repos.users);
 
   const root = new Hono<{ Variables: AuthVars }>();
   // Order matters: error handler wraps everything; request logger sees
