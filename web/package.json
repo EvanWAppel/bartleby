@@ -36,7 +36,7 @@
     "svelte": "^5.16.0",
     "svelte-check": "^4.1.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.18.0",
+    "typescript-eslint": "^8.62.1",
     "vite": "^6.0.0",
     "vitest": "^2.1.0"
   },
