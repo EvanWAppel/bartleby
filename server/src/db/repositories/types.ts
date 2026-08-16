@@ -70,8 +70,7 @@ export interface MentionRow {
   email_sent_at: string | null;
 }
 
-export interface SearchHit {
-  id: string;
-  title: string;
-  snippet: string;
-}
+// FTS5 query result — this is also the GET /search wire shape, so it comes
+// from the shared contract. Re-exported here (and via the repositories
+// barrel) so repository code can keep importing it from one place.
+export type { SearchHit } from '@bartleby/shared';

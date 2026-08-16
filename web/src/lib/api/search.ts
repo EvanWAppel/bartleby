@@ -8,12 +8,11 @@
 // returned string into safe `{ text, highlighted }` segments that the
 // overlay renders as plain text nodes with a <mark> wrapper.
 
-export interface SearchHit {
-  id: string;
-  title: string;
-  /** Server-returned snippet with literal "<mark>...</mark>" markers. */
-  snippet: string;
-}
+import type { SearchHit } from '@bartleby/shared';
+
+// Re-export so components importing SearchHit from this module are
+// unaffected by the move to the shared wire contract.
+export type { SearchHit };
 
 export class SearchApiError extends Error {
   readonly status: number;

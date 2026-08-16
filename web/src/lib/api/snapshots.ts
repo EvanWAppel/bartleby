@@ -4,17 +4,11 @@
 // Detail endpoint includes `markdown_preview` so the preview pane can
 // render without pulling in Yjs on the client.
 
-export interface SnapshotSummary {
-  id: string;
-  note_id: string;
-  label: string | null;
-  created_at: string;
-}
+import type { SnapshotSummary, SnapshotDetail } from '@bartleby/shared';
 
-export interface SnapshotDetail extends SnapshotSummary {
-  yjs_state_base64: string;
-  markdown_preview: string;
-}
+// Re-export so components importing these from this module are unaffected
+// by the move to the shared wire contract.
+export type { SnapshotSummary, SnapshotDetail };
 
 export class SnapshotsApiError extends Error {
   readonly status: number;

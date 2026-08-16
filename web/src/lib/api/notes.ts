@@ -2,22 +2,18 @@
 // through the SvelteKit-side proxy (configured in vite.config.ts) so
 // the browser sees a same-origin URL.
 
-export interface NoteSummary {
-  id: string;
-  title: string;
-  tags: string[];
-  updated_at: string;
-  created_at: string;
-}
+import type {
+  NoteSummary,
+  NotesListResponse,
+  CreateNoteResponse,
+  BacklinksListResponse,
+  ImportResponse,
+  ImportedNoteRef,
+} from '@bartleby/shared';
 
-export interface NotesListResponse {
-  notes: NoteSummary[];
-}
-
-export interface CreateNoteResponse {
-  id: string;
-  title: string;
-}
+// Re-export the wire types that components import from this module, so the
+// single source of truth (@bartleby/shared) is transparent to callers.
+export type { NoteSummary, NotesListResponse, CreateNoteResponse };
 
 export class NotesApiError extends Error {
   readonly status: number;
@@ -172,10 +168,6 @@ export interface InboundBacklink {
   linkText: string;
 }
 
-interface BacklinksListResponse {
-  backlinks: { source_id: string; source_title: string; link_text: string }[];
-}
-
 export async function listBacklinks(
   id: string,
   opts: { signal?: AbortSignal; fetch?: FetchLike } = {},
@@ -198,14 +190,9 @@ export async function listBacklinks(
 // endpoint. The endpoint accepts multipart/form-data with files under
 // any field name; we use `files`. Returns the list of created notes
 // (id + title) so callers can navigate / refresh.
-export interface ImportedNote {
-  id: string;
-  title: string;
-}
-
-interface ImportResponse {
-  notes: ImportedNote[];
-}
+// The wire element is @bartleby/shared's ImportedNoteRef; keep the local
+// name callers know.
+export type ImportedNote = ImportedNoteRef;
 
 export async function importNotes(
   files: File[],

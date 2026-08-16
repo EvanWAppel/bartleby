@@ -1,0 +1,16 @@
+{
+  "name": "@bartleby/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared REST wire-contract types between the Bartleby web client and server. Types only — no runtime code, so imports erase to nothing and there is no build step.",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ]
+}

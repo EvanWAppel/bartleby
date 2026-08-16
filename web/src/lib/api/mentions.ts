@@ -2,17 +2,11 @@
 // Server row shape (with `note_title` joined in) — see
 // server/src/mentions/routes.ts.
 
-export interface MentionDto {
-  id: string;
-  note_id: string;
-  mentioned_user_id: string;
-  mentioning_user_id: string;
-  source: string;
-  created_at: string;
-  read_at: string | null;
-  email_sent_at: string | null;
-  note_title: string;
-}
+import type { MentionDto } from '@bartleby/shared';
+
+// Re-export so components importing MentionDto from this module are
+// unaffected by the move to the shared wire contract.
+export type { MentionDto };
 
 export class MentionsApiError extends Error {
   readonly status: number;

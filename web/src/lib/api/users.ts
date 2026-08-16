@@ -2,6 +2,10 @@
 // the @mention picker. Request goes through the SvelteKit-side proxy
 // (configured in vite.config.ts) so the browser sees a same-origin URL.
 
+// The GET /users wire shape comes from the shared contract; UserSummary
+// below is the web-only camelCase transform listUsers maps it into.
+import type { UsersListResponse } from '@bartleby/shared';
+
 export interface UserSummary {
   /** Always present — stable identifier. */
   email: string;
@@ -13,16 +17,6 @@ export interface UserSummary {
   color: string | null;
   /** True iff the user exists in the server's users table. */
   signedIn: boolean;
-}
-
-interface UsersListResponse {
-  users: {
-    email: string;
-    display_name: string | null;
-    user_id: string | null;
-    color: string | null;
-    signed_in: boolean;
-  }[];
 }
 
 export class UsersApiError extends Error {

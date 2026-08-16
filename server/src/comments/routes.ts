@@ -22,6 +22,7 @@
 import { Hono, type Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
+import type { CommentDto } from '@bartleby/shared';
 import type { AuthVars } from '../auth/index.js';
 import type { Repositories } from '../db/repositories/index.js';
 import type { CommentRow } from '../db/repositories/index.js';
@@ -79,10 +80,10 @@ function nowIso(deps: CommentsAppDeps): string {
   return (deps.now ?? (() => new Date()))().toISOString();
 }
 
-function toDto(row: CommentRow): CommentRow {
-  // Pass the row through verbatim — its shape already matches the wire
-  // contract (snake_case fields), and the CommentRow type is exported
-  // from the repositories barrel so the web client can mirror it.
+function toDto(row: CommentRow): CommentDto {
+  // Pass the row through verbatim — the CommentRow shape is a superset of
+  // (in fact equal to) the @bartleby/shared CommentDto wire contract, so
+  // returning it directly is the whole serialization.
   return row;
 }
 
