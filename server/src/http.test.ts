@@ -3,6 +3,7 @@ import pino from 'pino';
 import type { Database } from 'better-sqlite3';
 import { buildBartlebyHttpApp } from './http.js';
 import { createTestDatabase } from './db/test-fixture.js';
+import { buildSessionConfig, issueSessionJwt, SESSION_COOKIE_NAME } from './auth/session.js';
 
 const baseEnv = {
   SESSION_SECRET: 'z'.repeat(48),
@@ -67,5 +68,32 @@ describe('buildBartlebyHttpApp', () => {
     const { app } = buildBartlebyHttpApp(baseEnv, deps());
     const res = await app.request('http://localhost:3000/search?q=hello');
     expect(res.status).toBe(401);
+  });
+
+  it('accepts an existing signed session after the app restarts', async () => {
+    const firstProcess = buildBartlebyHttpApp(baseEnv, deps());
+    const user = await firstProcess.store.upsertUserByEmail({
+      email: 'alice@example.com',
+      displayName: 'Alice',
+    });
+    const token = await issueSessionJwt(buildSessionConfig(baseEnv), {
+      userId: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      color: user.color,
+      jti: 'restart-regression',
+    });
+
+    const restartedProcess = buildBartlebyHttpApp(baseEnv, deps());
+    const res = await restartedProcess.app.request('http://localhost:3000/auth/me', {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      id: user.id,
+      email: user.email,
+      display_name: user.displayName,
+    });
   });
 });
