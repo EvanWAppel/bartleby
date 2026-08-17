@@ -37,6 +37,20 @@ describe('UsersRepository', () => {
     expect(repo.findByEmail('nope@example.com')).toBeUndefined();
   });
 
+  test('updateDisplayName preserves the persisted identity', ({ db }) => {
+    const repo = createUsersRepository(db);
+    repo.insert(alice);
+
+    expect(repo.updateDisplayName(alice.id, 'Alice Updated')).toEqual({
+      ...alice,
+      display_name: 'Alice Updated',
+    });
+    expect(repo.findById(alice.id)).toEqual({
+      ...alice,
+      display_name: 'Alice Updated',
+    });
+  });
+
   test('list returns users in created_at order', ({ db }) => {
     const repo = createUsersRepository(db);
     repo.insert(bob);

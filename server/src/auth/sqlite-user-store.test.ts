@@ -34,6 +34,9 @@ describe('SQLite-backed session users', () => {
 
     expect(second.id).toBe(first.id);
     expect(second.email).toBe('alice@example.com');
+    expect(second.displayName).toBe('Alice Updated');
+    expect(second.color).toBe(first.color);
+    expect(second.createdAt).toEqual(first.createdAt);
     expect(users.list()).toHaveLength(1);
   });
 });

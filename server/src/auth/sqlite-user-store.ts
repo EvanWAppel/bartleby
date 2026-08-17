@@ -31,7 +31,11 @@ export function createSqliteUserSessionStore(users: UsersRepository): SessionSto
       const normalizedEmail = input.email.trim().toLowerCase();
       const existing = users.findByEmail(normalizedEmail);
       if (existing !== undefined) {
-        return toSessionUser(existing);
+        const updated = users.updateDisplayName(existing.id, input.displayName);
+        if (updated === undefined) {
+          throw new Error(`Persisted session user disappeared during update: ${existing.id}`);
+        }
+        return toSessionUser(updated);
       }
 
       const created = await transient.upsertUserByEmail({
