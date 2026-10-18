@@ -272,7 +272,7 @@ Final gates before sharing the URL with friends.
 - [ ] **L-003** Domain DNS pointed at the VPS; Caddy successfully provisions a Let's Encrypt cert.
 - [ ] **L-004** Litestream replication active and verified via a test restore on a separate machine (O-006).
 - [ ] **L-005** Operator runs through full happy path on prod (sign-in, create, edit, comment, mention, history, export).
-- [ ] **L-006** README contains TUI install instructions (`uv tool install` or equivalent) and the device-code first-run walkthrough.
+- [x] **L-006** README contains TUI install instructions (`uv tool install` or equivalent) and the device-code first-run walkthrough.
 - [ ] **L-007** Seed any existing markdown notes via import (W-025).
 - [ ] **L-008** Invite friends: send each a one-paragraph email with the URL, the TUI install line, and a note to ping the operator if anything breaks.
 - [ ] **L-009** One-week soak: operator and ≥2 friends use it daily; no critical bugs (data loss, repeated disconnects, auth failures).

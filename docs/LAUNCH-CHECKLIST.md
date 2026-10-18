@@ -97,7 +97,7 @@ Notes persist to `.dev-data/bartleby.db` across restarts. Vite proxies `/auth`, 
 ## Part 3 — Rollout
 
 ### L-006 · README TUI instructions
-- [ ] Add TUI install instructions to the root README (`uv tool install` or equivalent) + the device-code first-run walkthrough (visit `/device`, enter the code).
+- [x] Add TUI install instructions to the root README (`uv tool install` or equivalent) + the device-code first-run walkthrough (visit `/device`, enter the code).
 
 ### L-007 · Seed existing notes
 - [ ] Import any pre-existing markdown notes via the web drag-and-drop import (W-025) or `POST /notes/import`.

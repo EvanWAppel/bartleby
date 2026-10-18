@@ -127,6 +127,38 @@ Common developer tasks are `make test`, `make test-e2e`, `make lint`, and `make 
 For the production single-service Railway setup, required variables, and Google OAuth redirect
 configuration, see [`docs/RAILWAY.md`](docs/RAILWAY.md).
 
+## Installing the terminal client
+
+Friends who want the TUI against a deployed Bartleby need [uv](https://docs.astral.sh/uv/)
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
+
+```sh
+uv tool install "git+https://github.com/EvanWAppel/bartleby#subdirectory=tui"
+```
+
+Point it at the server (replace the host with the real one) and launch:
+
+```sh
+export BARTLEBY_HTTP_URL=https://bartleby.example.com
+export BARTLEBY_WS_URL=wss://bartleby.example.com/collaboration
+bartleby-tui
+```
+
+Put the two `export` lines in your shell profile so you only set them once. Upgrade later with
+`uv tool upgrade bartleby-tui`.
+
+### First run: device-code sign-in
+
+The terminal can't do a Google sign-in itself, so the first launch borrows your browser:
+
+1. `bartleby-tui` prints a URL ending in `/device` and a short code.
+2. Open the URL, sign in with the Google account the operator allowlisted, and enter the code.
+3. The TUI notices the approval within a few seconds and opens. Its tokens are saved in your OS
+   keyring (Keychain, Secret Service, or Windows Credential Manager), so later launches skip
+   this step until the token expires.
+
+If the code expires before you approve it, just run `bartleby-tui` again for a fresh one.
+
 ## Status
 
 Feature-complete against the [PRD](./PRD.md) and [build plan](./TASKS.md): the web and TUI clients, the collaboration server, auth (Google OAuth for web, device-code for the TUI), comments, snapshots, mentions, search, and import/export all ship. The remaining open work is operational rollout — see [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md).
