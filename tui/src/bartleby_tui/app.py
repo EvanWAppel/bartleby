@@ -1007,11 +1007,13 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    server_url = os.environ.get("BARTLEBY_WS_URL", DEFAULT_SERVER_URL)
     http_base_url = os.environ.get("BARTLEBY_HTTP_URL")
     note_id = os.environ.get("BARTLEBY_NOTE_ID", DEFAULT_DOC_NAME)
     access_token = os.environ.get("BARTLEBY_ACCESS_TOKEN")
     token_store = EnvironmentTokenStore(access_token) if access_token else None
     BartlebyApp(
+        server_url=server_url,
         doc_name=note_id,
         http_base_url=http_base_url,
         token_store=token_store,
