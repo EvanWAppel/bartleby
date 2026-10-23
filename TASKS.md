@@ -100,6 +100,7 @@ REST endpoints for everything that isn't live Yjs traffic. All require an authen
 - [x] **S-011** `GET /search?q=...` — FTS search over `notes_fts`, returns notes with snippet. (test: query matches body and title.)
 - [x] **S-012** Error model: consistent JSON error responses (`{ error: { code, message } }`). (test: 4xx/5xx all match shape.)
 - [x] **S-013** Request logging via pino: structured JSON, includes user id, route, status, duration. (test: log assertion via test transport.)
+- [x] **S-014** Remove the stale in-memory auth-store TODO in `server/src/auth/store.ts`. (test: server test + lint + typecheck stay green.) *(Comment-only. The TODO asked for a DB-backed store; PR #110's `sqlite-user-store.ts` already persists users and is what `index.ts`/`http.ts` wire. The in-memory store can't be deleted: the SQLite store composes it to mint new identities (color picked once at creation, then persisted — already pinned by `sqlite-user-store.test.ts`) and to hold the process-local revoked-JTI / device-auth / refresh-token state. The header now documents that role and its use as the DB-free test double. No behavior change, so no new test.)*
 
 ---
 

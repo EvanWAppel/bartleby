@@ -1,10 +1,16 @@
-// In-memory session store for Workstream A.
+// SessionStore interface plus the in-memory implementation.
 //
-// TODO(D-001..D-002, D-011): Once the SQLite users table and repository layer
-// land, replace this with a DB-backed implementation. The interface below is
-// intentionally narrow so the swap is mechanical. Note that on swap, the
-// deterministic color logic should move to a one-shot at user creation
-// (PRD §8.1: "Per-user color assigned at user creation and reused everywhere").
+// Production wires `createSqliteUserSessionStore` (sqlite-user-store.ts),
+// which persists users in the SQLite `users` table and composes this
+// in-memory store for two things:
+//   - minting new identities (id, normalized email, color, createdAt) before
+//     they are inserted, so a user's color is chosen once at creation and
+//     then read back from the DB everywhere (PRD §8.1);
+//   - process-local state that is intentionally not persisted: revoked JTIs,
+//     device authorizations, and refresh tokens. A restart clears these.
+//
+// On its own, `createInMemorySessionStore` is the fast test double for
+// route/middleware tests that don't need a database.
 
 import { createHash, randomUUID } from 'node:crypto';
 
