@@ -265,6 +265,7 @@ Targets a single small VPS. Depends on the server being launchable as a single N
 - [x] **Q-004** Load: simulate 5 concurrent users editing 5 notes for 10 min; assert no errors, snapshot growth bounded, memory stable. (test: scripted; thresholds documented.)
 - [x] **Q-005** Accessibility pass on web: keyboard-only navigation works; aria-labels on icon buttons; color contrast on presence cursors readable in light + dark. (test: axe scan on key routes.)
 - [x] **Q-006** Stabilize pre-existing flaky Playwright tests: `editor-toolbar` strike-through assertion, `editor-shortcuts` Mod-Shift-X path, `editor-mentions` picker-click interaction, `search-overlay` Escape dismissal. Each reproduces intermittently on `main` independent of any recent PR. (test: 20x repeat-each green for each spec; document root cause per spec in the commit message.)
+- [x] **Q-007** Read-only Dependabot triage: CI status, semver level and breaking-change risk for each of the 23 open Dependabot PRs (#76–#99, #111). The table went to Evan in the 2026-10-24 weekend-session summary. Per PRIMER it is deliberately not committed, and no PR was commented on or modified. Key findings: all green runs are stale (Jul–Aug); #85 conflicts; #99 (node 26) bumps only `server/Dockerfile`, while the deployed root `Dockerfile` stays on node 22, and CI never builds images. (test: n/a, read-only; `make test` unchanged and green.)
 
 ---
 
