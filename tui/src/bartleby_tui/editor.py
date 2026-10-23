@@ -139,6 +139,13 @@ class StructuredEditor(Static):
     class MentionPickerRequested(Message):
         """Posted when ``@`` is typed in insert mode (T-006 mention picker)."""
 
+    class CaretLineChanged(Message):
+        """T-027: the caret moved to a different line (1-based leaf ordinal)."""
+
+        def __init__(self, line: int) -> None:
+            super().__init__()
+            self.line = line
+
     class GoToRequested(Message):
         """Posted on a ``g<key>`` chord in normal mode (T-012+ pane toggles).
 
@@ -167,6 +174,8 @@ class StructuredEditor(Static):
         self._link_buffer: str | None = None
         # True after `g` in normal mode, awaiting the chord's second key.
         self._pending_g: bool = False
+        # T-027: caret line last announced via CaretLineChanged (None = never).
+        self._caret_line: int | None = None
 
     # --------------------------------------------------------------- lifecycle
 
@@ -183,6 +192,17 @@ class StructuredEditor(Static):
     @property
     def caret(self) -> tuple[tuple[int, ...], int]:
         return (self._caret_path, self._caret_offset)
+
+    @property
+    def caret_line(self) -> int:
+        """1-based index of the caret's leaf block in document order (T-027).
+
+        One leaf block (paragraph, heading, list item, code block…) counts as
+        one line, independent of terminal wrapping, so peers on different
+        terminal widths agree on the number.
+        """
+        leaves = _leaf_paths(ydoc_to_blocks(self._doc))
+        return self._current_leaf_index(leaves) + 1
 
     def set_doc(self, doc: Y.YDoc) -> None:
         """Point the editor at a different YDoc (used when opening a note).
@@ -201,6 +221,10 @@ class StructuredEditor(Static):
         """Repaint from the YDoc, overlaying the caret and a mode line."""
         blocks = ydoc_to_blocks(self._doc)
         self._clamp_caret(blocks)
+        line = self._current_leaf_index(_leaf_paths(blocks)) + 1
+        if line != self._caret_line:
+            self._caret_line = line
+            self.post_message(self.CaretLineChanged(line))
         self._inject_caret(blocks)
         body = render_document(blocks)
         self.update(Group(body, self._status_line()))

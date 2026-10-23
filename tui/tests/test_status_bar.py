@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 import y_py as Y
 from textual.app import App, ComposeResult
 
 from bartleby_tui.app import BartlebyApp
+from bartleby_tui.auth import UserInfo
 from bartleby_tui.connection import HocuspocusConnection
+from bartleby_tui.editor import StructuredEditor
 from bartleby_tui.status_bar import (
     FALLBACK_COLOR,
     LIVE_GLYPH,
@@ -177,3 +180,96 @@ class TestPresenceUpdatesOnPeerJoin:
             # Tolerate the peer chip staying around — Hocuspocus relies on
             # a timeout to clear it and we don't want flaky CI. The hard
             # spec assertion is the "appears" half above.
+
+
+# ---------------------------------------------------------------------- T-027
+
+
+class _RecordingConnection:
+    """Stand-in for HocuspocusConnection that records published awareness."""
+
+    def __init__(self) -> None:
+        self.published: list[dict[str, Any] | None] = []
+
+    def set_local_awareness(self, state: dict[str, Any] | None) -> None:
+        self.published.append(state)
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+class TestCaretLineReadout:
+    """T-027: ``● alice L42  ● you L42`` — caret line numbers via awareness."""
+
+    async def test_peer_line_rendered_after_name(self) -> None:
+        host = _StatusBarHost()
+        async with host.run_test() as pilot:
+            await pilot.pause()
+            host.bar.set_peers({42: {"user": {"name": "alice", "color": "#112233"}, "line": 42}})
+            assert "● alice L42" in host.bar.render_status().plain
+
+    async def test_self_line_rendered_after_you(self) -> None:
+        host = _StatusBarHost()
+        async with host.run_test() as pilot:
+            await pilot.pause()
+            host.bar.set_self({"user": {"name": "me", "color": "#aabbcc"}, "line": 7})
+            host.bar.set_peers({1: {"user": {"name": "alice"}, "line": 42}})
+            assert "● you L7  ● alice L42" in host.bar.render_status().plain
+
+    @pytest.mark.parametrize("line", [None, "12", True, 0, -3])
+    async def test_missing_or_invalid_line_omitted(self, line: object) -> None:
+        """Web peers publish no ``line`` (they use y-prosemirror cursors)."""
+        host = _StatusBarHost()
+        async with host.run_test() as pilot:
+            await pilot.pause()
+            state: dict[str, Any] = {"user": {"name": "alice"}}
+            if line is not None:
+                state["line"] = line
+            host.bar.set_peers({1: state})
+            rendered = host.bar.render_status().plain
+            assert rendered.endswith("● alice"), rendered
+
+    async def test_editor_reports_caret_line(self) -> None:
+        app = BartlebyApp(connect_on_mount=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            editor = app.query_one("#editor", StructuredEditor)
+            assert editor.caret_line == 1
+            await pilot.press("a", "enter", "b", "enter")
+            await pilot.pause()
+            assert editor.caret_line == 3
+            await pilot.press("up")
+            await pilot.pause()
+            assert editor.caret_line == 2
+
+    async def test_self_chip_tracks_caret_line(self) -> None:
+        app = BartlebyApp(connect_on_mount=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            bar = app.query_one("#status-bar", StatusBar)
+            assert "● you L1" in bar.render_status().plain
+            await pilot.press("a", "enter")
+            await pilot.pause()
+            assert "● you L2" in bar.render_status().plain
+
+    async def test_caret_line_published_through_awareness(self) -> None:
+        app = BartlebyApp(connect_on_mount=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            conn = _RecordingConnection()
+            app.connection = conn  # ty: ignore[invalid-assignment]
+            app.user_info = UserInfo(
+                id="u1", email="me@example.com", display_name="Me", color="#abcdef"
+            )
+            await pilot.press("a", "enter")
+            await pilot.pause()
+            assert conn.published, "expected an awareness publish on caret move"
+            assert conn.published[-1] == {
+                "user": {"name": "Me", "color": "#abcdef"},
+                "line": 2,
+            }
+            # Typing on the same line doesn't re-publish.
+            count = len(conn.published)
+            await pilot.press("b", "c")
+            await pilot.pause()
+            assert len(conn.published) == count

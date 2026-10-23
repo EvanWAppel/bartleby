@@ -254,6 +254,8 @@ class BartlebyApp(App[None]):
         self._notes_view: NotesList | None = None
         self._notes_timer: Timer | None = None
         self._status_bar: StatusBar | None = None
+        # T-027: the caret line we last published through awareness.
+        self._caret_line: int | None = None
         # T-008 search: the full polled list (cache to restore after a search)
         # + the search box + whether we're currently showing search results.
         self._all_notes: list[Note] = []
@@ -404,6 +406,8 @@ class BartlebyApp(App[None]):
         self.connection.on_status_change(self._on_status_change)
         self.connection.on_awareness_change(self._on_awareness_change)
         await self.connection.__aenter__()
+        # T-027: a fresh room connection has no local state yet; republish.
+        self._publish_presence()
         # Paint whatever server state arrived during the sync handshake.
         if self._editor is not None:
             self._editor.refresh_view()
@@ -976,6 +980,29 @@ class BartlebyApp(App[None]):
         if self._status_bar is None:
             return
         self._status_bar.set_peers(peers)
+
+    def on_structured_editor_caret_line_changed(
+        self, message: StructuredEditor.CaretLineChanged
+    ) -> None:
+        """T-027: publish the caret's new line to peers + our own chip."""
+        self._caret_line = message.line
+        self._publish_presence()
+
+    def _local_presence(self) -> dict[str, Any]:
+        """Our awareness payload: the web's ``user`` shape plus ``line``."""
+        state: dict[str, Any] = {}
+        if self.user_info is not None:
+            state["user"] = {"name": self.user_info.display_name, "color": self.user_info.color}
+        if self._caret_line is not None:
+            state["line"] = self._caret_line
+        return state
+
+    def _publish_presence(self) -> None:
+        state = self._local_presence()
+        if self._status_bar is not None:
+            self._status_bar.set_self(state)
+        if self.connection is not None:
+            self.connection.set_local_awareness(state)
 
     # ------------------------------------------------------------------ YDoc -> view
 
