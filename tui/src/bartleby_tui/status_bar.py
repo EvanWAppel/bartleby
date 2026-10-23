@@ -19,10 +19,12 @@ Three logical regions packed into a single ``Static`` cell that lives in
   banner, etc. Empty by default for T-018; later tasks can call
   ``set_hint``.
 
-We only ship "name" presence here; the spec example also shows ``L42``
-line numbers but the T-018 acceptance is satisfied by *"presence updates
-when another client joins"*, so we keep the cursor-line readout for a
-later task (T-005 or follow-on).
+T-027 adds the caret line readout (``● alice L42  ● you L42``). TUI
+clients publish a top-level ``line`` (1-based, the caret's leaf-block
+ordinal) in their awareness state; a chip gets an ``L<n>`` suffix only
+when that field is a positive int. Web peers publish y-prosemirror
+``cursor`` relative positions instead of ``line``, so their chips show
+the name alone.
 """
 
 from __future__ import annotations
@@ -131,9 +133,9 @@ class StatusBar(Static):
     def _render_presence(self, text: Text) -> None:
         chips: list[tuple[str, str]] = []
         if self._self_state is not None:
-            chips.append(("you", _color_of(self._self_state)))
+            chips.append((_label("you", self._self_state), _color_of(self._self_state)))
         for _, state in sorted(self._peers.items()):
-            chips.append((_name_of(state), _color_of(state)))
+            chips.append((_label(_name_of(state), state), _color_of(state)))
         if not chips:
             return
         text.append(REGION_SEP)
@@ -142,6 +144,21 @@ class StatusBar(Static):
                 text.append(PEER_SEP)
             text.append(LIVE_GLYPH, style=color)
             text.append(f" {name}")
+
+
+def _label(name: str, state: Mapping[str, Any]) -> str:
+    """Chip text: the name, plus ``L<n>`` when the state carries a caret line."""
+    line = _line_of(state)
+    return name if line is None else f"{name} L{line}"
+
+
+def _line_of(state: Mapping[str, Any]) -> int | None:
+    """T-027: the 1-based caret line a TUI peer published, if valid."""
+    line = state.get("line")
+    # bool is an int subclass; a stray True must not render as "L1".
+    if isinstance(line, int) and not isinstance(line, bool) and line > 0:
+        return line
+    return None
 
 
 def _name_of(state: Mapping[str, Any]) -> str:

@@ -7,12 +7,17 @@ Later panes (comments, history, …) join this module.
 
 from __future__ import annotations
 
+from rich.console import RenderableType
+from rich.text import Text
 from textual import events
+from textual.app import ComposeResult
+from textual.containers import VerticalScroll
 from textual.message import Message
-from textual.widgets import OptionList
+from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from bartleby_tui.notes_api import Backlink, Comment, Mention, Note, Snapshot
+from bartleby_tui.renderer import render_document, snapshot_state_to_blocks
 
 
 class BacklinksPane(OptionList):
@@ -132,6 +137,52 @@ class SnapshotsPane(OptionList):
         for snap in self._snapshots:
             label = snap.label if snap.label else "auto"
             self.add_option(Option(f"{label}  {snap.created_at}", id=snap.id))
+
+
+class SnapshotPreview(VerticalScroll):
+    """Read-only inline preview of the highlighted snapshot (T-028).
+
+    The snapshot's Yjs state is decoded client-side into a throwaway YDoc and
+    drawn with the same ``render_document`` renderer as the editor, inside a
+    scroller so long notes stay readable. Nothing here touches the live
+    document; Enter in ``SnapshotsPane`` is still the only way to restore.
+    """
+
+    _EMPTY = Text("(highlight a snapshot to preview it)", style="dim")
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id, can_focus=False)
+        self._snapshot_id: str | None = None
+        self._rendered: RenderableType = self._EMPTY
+        self._body = Static(self._EMPTY)
+
+    def compose(self) -> ComposeResult:
+        yield self._body
+
+    @property
+    def snapshot_id(self) -> str | None:
+        """Id of the snapshot currently shown, or ``None`` when empty."""
+        return self._snapshot_id
+
+    @property
+    def rendered(self) -> RenderableType:
+        """The renderable currently shown (exposed for tests)."""
+        return self._rendered
+
+    def show_state(self, snapshot_id: str, state: bytes) -> None:
+        """Decode ``state`` and render it as the preview of ``snapshot_id``."""
+        blocks = snapshot_state_to_blocks(state)
+        self._snapshot_id = snapshot_id
+        self._rendered = (
+            render_document(blocks) if blocks else Text("(empty snapshot)", style="dim")
+        )
+        self._body.update(self._rendered)
+        self.scroll_home(animate=False)
+
+    def clear_preview(self) -> None:
+        self._snapshot_id = None
+        self._rendered = self._EMPTY
+        self._body.update(self._rendered)
 
 
 class CommentsPane(OptionList):

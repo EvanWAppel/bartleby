@@ -7,9 +7,12 @@
 // events didn't reach those listeners reliably in this combo. Native
 // form submits sidestep the delegation entirely.
 //
-// Blur-to-save (also part of W-006's spec) is intentionally deferred
-// for the same reason — Enter satisfies the core "in-place rename"
-// use case for v1.
+// W-029: blur-to-save. TitleEditor attaches a native `blur` listener
+// via addEventListener (bypassing Svelte's handler props) that calls
+// form.requestSubmit() when the draft differs from the server title,
+// so blur goes through the same form-submit path as Enter. The input
+// carries `data-blur-ready="true"` once that listener exists; tests
+// gate on it so a blur never fires before hydration.
 
 import { test, expect } from '@playwright/test';
 import { signIn } from './helpers/auth.js';
@@ -85,5 +88,66 @@ test('title from PATCH-via-API reflects on next page load', async ({ browser }) 
   const page = await context.newPage();
   await page.goto(`/n/${note.id}`);
   await expect(page.getByTestId('title-input')).toHaveValue('Renamed via API');
+  await context.close();
+});
+
+test('W-029: rename via blur persists across reload', async ({ browser }) => {
+  const context = await browser.newContext();
+  await signIn(context);
+  const note = await createNote(context, `title-blur-${Date.now()}`);
+  const page = await context.newPage();
+  await page.goto(`/n/${note.id}`);
+
+  const input = page.getByTestId('title-input');
+  await expect(input).toHaveValue(note.title);
+  // Cold vite-dev hydration can exceed the 5s default.
+  await expect(input).toHaveAttribute('data-blur-ready', 'true', { timeout: 30_000 });
+
+  await input.click();
+  await input.fill('Renamed via blur');
+  // Real focus move (click elsewhere on the page), not a synthetic
+  // dispatchEvent — this is the user gesture blur-to-save exists for.
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes(`/api/notes/${note.id}/rename`) && r.request().method() === 'POST',
+    ),
+    page.getByTestId('tag-add-input').click(),
+  ]);
+
+  // Persisted server-side: the canonical GET reflects the new title.
+  await expect
+    .poll(async () => {
+      const res = await context.request.get(`/notes/${note.id}`);
+      return ((await res.json()) as { title: string }).title;
+    })
+    .toBe('Renamed via blur');
+
+  await page.reload();
+  await expect(page.getByTestId('title-input')).toHaveValue('Renamed via blur');
+  await context.close();
+});
+
+test('W-029: blur without changes does not submit', async ({ browser }) => {
+  const context = await browser.newContext();
+  await signIn(context);
+  const note = await createNote(context, `title-blur-noop-${Date.now()}`);
+  const page = await context.newPage();
+  await page.goto(`/n/${note.id}`);
+
+  const input = page.getByTestId('title-input');
+  // Cold vite-dev hydration can exceed the 5s default.
+  await expect(input).toHaveAttribute('data-blur-ready', 'true', { timeout: 30_000 });
+
+  let renamePosts = 0;
+  page.on('request', (req) => {
+    if (req.url().includes('/rename') && req.method() === 'POST') renamePosts += 1;
+  });
+
+  await input.click();
+  await page.getByTestId('tag-add-input').click();
+  // Give any (wrong) submit a chance to fire before asserting none did.
+  await page.waitForTimeout(500);
+  expect(renamePosts).toBe(0);
+  await expect(input).toHaveValue(note.title);
   await context.close();
 });

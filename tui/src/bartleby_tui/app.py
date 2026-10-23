@@ -72,6 +72,7 @@ from bartleby_tui.notes_api import (
     fetch_comments,
     fetch_mentions,
     fetch_notes,
+    fetch_snapshot_state,
     fetch_snapshots,
     fetch_trash,
     fetch_users,
@@ -88,6 +89,7 @@ from bartleby_tui.panes import (
     BacklinksPane,
     CommentsPane,
     MentionsPane,
+    SnapshotPreview,
     SnapshotsPane,
     TrashPane,
 )
@@ -214,6 +216,21 @@ class BartlebyApp(App[None]):
         display: block;
     }
 
+    /* T-028: history widens the pane so the inline preview is readable. */
+    #right-pane.history {
+        width: 48;
+    }
+
+    #history-preview {
+        display: none;
+        height: 2fr;
+        border-top: solid $primary;
+    }
+
+    #history-preview.active {
+        display: block;
+    }
+
     /* StatusBar carries its own DEFAULT_CSS; nothing to override here. */
     """
 
@@ -254,6 +271,8 @@ class BartlebyApp(App[None]):
         self._notes_view: NotesList | None = None
         self._notes_timer: Timer | None = None
         self._status_bar: StatusBar | None = None
+        # T-027: the caret line we last published through awareness.
+        self._caret_line: int | None = None
         # T-008 search: the full polled list (cache to restore after a search)
         # + the search box + whether we're currently showing search results.
         self._all_notes: list[Note] = []
@@ -271,6 +290,7 @@ class BartlebyApp(App[None]):
         self._trash_pane: TrashPane | None = None
         self._mentions_pane: MentionsPane | None = None
         self._snapshots_pane: SnapshotsPane | None = None
+        self._snapshot_preview: SnapshotPreview | None = None
         self._comments_pane: CommentsPane | None = None
         self._active_pane: str | None = None
 
@@ -329,6 +349,10 @@ class BartlebyApp(App[None]):
                 snapshots_pane = SnapshotsPane(id="history-pane")
                 self._snapshots_pane = snapshots_pane
                 yield snapshots_pane
+                # T-028: decoded preview of the highlighted snapshot.
+                snapshot_preview = SnapshotPreview(id="history-preview")
+                self._snapshot_preview = snapshot_preview
+                yield snapshot_preview
                 comments_pane = CommentsPane(id="comments-pane")
                 self._comments_pane = comments_pane
                 yield comments_pane
@@ -404,6 +428,8 @@ class BartlebyApp(App[None]):
         self.connection.on_status_change(self._on_status_change)
         self.connection.on_awareness_change(self._on_awareness_change)
         await self.connection.__aenter__()
+        # T-027: a fresh room connection has no local state yet; republish.
+        self._publish_presence()
         # Paint whatever server state arrived during the sync handshake.
         if self._editor is not None:
             self._editor.refresh_view()
@@ -579,6 +605,8 @@ class BartlebyApp(App[None]):
             return
         for pane_id in self._PANE_IDS:
             self.query_one(pane_id).set_class(pane_id == f"#{name}-pane", "active")
+        self.query_one("#history-preview").set_class(name == "history", "active")
+        right.set_class(name == "history", "history")
         self.query_one("#right-pane-title", Label).update(name.capitalize())
         right.add_class("visible")
         self._active_pane = name
@@ -609,6 +637,8 @@ class BartlebyApp(App[None]):
                 else []
             )
             self._snapshots_pane.set_snapshots(snaps)
+            if self._snapshot_preview is not None:
+                self._snapshot_preview.clear_preview()
             return self._snapshots_pane
         if name == "comments" and self._comments_pane is not None:
             await self._refresh_comments()
@@ -696,6 +726,30 @@ class BartlebyApp(App[None]):
             await mark_mention_read(self._http_base_url, mention_id, self._access_token)
             await self._refresh_mentions()
         await self.open_note(mention.note_id)
+
+    async def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        """T-028: highlighting a history row previews that snapshot inline."""
+        if self._snapshots_pane is None or event.option_list is not self._snapshots_pane:
+            return
+        snapshot_id = event.option.id
+        note_id = self._current_note_id()
+        if (
+            snapshot_id is None
+            or note_id is None
+            or self._http_base_url is None
+            or self._snapshot_preview is None
+        ):
+            return
+        state = await fetch_snapshot_state(
+            self._http_base_url, note_id, snapshot_id, self._access_token
+        )
+        # The highlight may have moved on while we were fetching; only paint
+        # the snapshot that is still highlighted.
+        current = self._snapshots_pane.highlighted_option
+        if current is None or current.id != snapshot_id:
+            return
+        log.debug("previewing snapshot %s of note %s", snapshot_id, note_id)
+        self._snapshot_preview.show_state(snapshot_id, state)
 
     def _confirm_restore_snapshot(self, snapshot_id: str | None) -> None:
         """T-015: Enter on a snapshot confirms, then restores it via the server.
@@ -976,6 +1030,29 @@ class BartlebyApp(App[None]):
         if self._status_bar is None:
             return
         self._status_bar.set_peers(peers)
+
+    def on_structured_editor_caret_line_changed(
+        self, message: StructuredEditor.CaretLineChanged
+    ) -> None:
+        """T-027: publish the caret's new line to peers + our own chip."""
+        self._caret_line = message.line
+        self._publish_presence()
+
+    def _local_presence(self) -> dict[str, Any]:
+        """Our awareness payload: the web's ``user`` shape plus ``line``."""
+        state: dict[str, Any] = {}
+        if self.user_info is not None:
+            state["user"] = {"name": self.user_info.display_name, "color": self.user_info.color}
+        if self._caret_line is not None:
+            state["line"] = self._caret_line
+        return state
+
+    def _publish_presence(self) -> None:
+        state = self._local_presence()
+        if self._status_bar is not None:
+            self._status_bar.set_self(state)
+        if self.connection is not None:
+            self.connection.set_local_awareness(state)
 
     # ------------------------------------------------------------------ YDoc -> view
 

@@ -1,0 +1,39 @@
+# Drafted in a bartleby weekend-prep session on 2026-10-22 (PLAT-REG-01); NOT yet verified.
+# Format: ~/Documents/_system/docs/project-toml.md
+
+[project]
+name = "bartleby"
+group = "portfolio"
+kind = "app"
+status = "active"           # last merge #114 (L-006); launch checklist L-* still open. Dropped from enki roster 2026-09-26.
+repo = "EvanWAppel/bartleby"
+visibility = "public"       # gh repo view, 2026-10-22
+on_site = false             # pruned from evanappel.me roster (enki DECISIONS.md)
+verified = false
+
+[deploy]
+host = "railway"            # docs/RAILWAY.md: one service from root Dockerfile; ops/ also has a VPS docker-compose path
+services = ["bartleby"]     # service name inferred from origin hostname; unconfirmed
+domain = ""                 # no custom domain yet (BLOCKED.md: VPS + domain/DNS)
+origin_urls_closed = false  # bartleby-production-721b.up.railway.app/health returned 200 on 2026-10-22
+
+[auth]
+scheme = "oauth"            # Google OAuth + allowlist (server/src/auth, server/src/config.ts)
+access_list = "env:BARTLEBY_ALLOWED_EMAILS"
+target = "unknown"
+
+[data]
+db = "sqlite"               # SQLite + FTS5 on a Railway volume at /data (BARTLEBY_DB_PATH); Litestream backup planned
+
+[demo]
+status = "none"             # `make demo` is local-only; no public demo
+url = ""
+path = ""
+
+[keys]
+paid = []                   # no LLM keys; RESEND_API_KEY is free-tier email (mentions)
+isolated = "n/a"
+spend_cap = "n/a"
+
+[platform]
+done = []

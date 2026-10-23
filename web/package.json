@@ -8,6 +8,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "pretest": "svelte-kit sync",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
