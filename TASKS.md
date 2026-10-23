@@ -43,6 +43,7 @@ Lightweight infrastructure that the other workstreams depend on. Mostly fast.
 - [x] **R-005** GitHub Actions workflow `.github/workflows/ci.yml`: jobs for server (Node), web (Node), tui (Python via uv) running tests + lint + typecheck on PR. (test: PR opened against `main` triggers all three jobs.)
 - [x] **R-006** GitHub Actions: cache `node_modules`, `uv` venv, and Playwright browsers for fast CI. (test: second run completes faster than first; cache hit logged.)
 - [x] **R-007** Root `Makefile` (or `justfile`) with targets: `dev` (run all three concurrently), `test` (run all suites), `lint`, `typecheck`. (test: `make test` exits 0 on a green tree.)
+- [x] **R-008** `web/`: `npm --prefix web test` works on a fresh clone. A `pretest` script runs `svelte-kit sync`, which generates `.svelte-kit/tsconfig.json` (the file `web/tsconfig.json` extends) before vitest starts. (test: in a clean clone, `npm --prefix web ci && npm --prefix web test` passes with no manual sync; before the fix all 8 files failed with `failed to resolve "extends":"./.svelte-kit/tsconfig.json"`.)
 
 ---
 
