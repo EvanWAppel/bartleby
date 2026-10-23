@@ -440,6 +440,20 @@ def ydoc_to_blocks(ydoc: Y.YDoc, fragment_name: str = "prosemirror") -> list[Blo
     return blocks
 
 
+def snapshot_state_to_blocks(state: bytes, fragment_name: str = "prosemirror") -> list[Block]:
+    """Decode a snapshot's Yjs state (T-028) into the intermediate Block tree.
+
+    ``state`` is a full ``encodeStateAsUpdate`` blob — what C-003 stores and
+    the snapshot detail route returns base64'd. It is applied to a fresh,
+    throwaway YDoc (never the live one), then walked by ``ydoc_to_blocks``.
+    """
+    import y_py as Y
+
+    doc = Y.YDoc()
+    Y.apply_update(doc, state)
+    return ydoc_to_blocks(doc, fragment_name)
+
+
 def _yxml_to_block(node: object) -> Block | None:
     """Convert one YXmlElement to a Block."""
     name = getattr(node, "name", None)

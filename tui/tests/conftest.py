@@ -231,3 +231,25 @@ def mock_device_auth_server() -> Iterator[MockDeviceAuthServer]:
     finally:
         server.shutdown()
         server.server_close()
+
+
+@pytest.fixture
+def snapshot_blob() -> bytes:
+    """T-028: a snapshot's Yjs state as the server stores it.
+
+    Encoded with ``encode_state_as_update`` over a ``prosemirror`` fragment
+    holding an H2 + paragraph — the same bytes C-003 writes into
+    ``snapshots.yjs_state`` and GET /notes/:id/snapshots/:snap_id returns as
+    ``yjs_state_base64``.
+    """
+    import y_py as Y
+
+    doc = Y.YDoc()
+    xml = doc.get_xml_element("prosemirror")
+    with doc.begin_transaction() as txn:  # ty: ignore[invalid-context-manager]
+        h = xml.push_xml_element(txn, "heading")
+        h.set_attribute(txn, "level", "2")
+        h.push_xml_text(txn).push(txn, "Old heading")
+        p = xml.push_xml_element(txn, "paragraph")
+        p.push_xml_text(txn).push(txn, "what the note said back then")
+    return bytes(Y.encode_state_as_update(doc))

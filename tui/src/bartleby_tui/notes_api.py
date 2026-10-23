@@ -11,6 +11,8 @@ propagate as-is so the caller / log surfaces them.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import urllib.request
@@ -209,6 +211,24 @@ async def fetch_snapshots(
             )
         )
     return out
+
+
+async def fetch_snapshot_state(
+    http_base_url: str, note_id: str, snapshot_id: str, access_token: str | None = None
+) -> bytes:
+    """GET ``/notes/:id/snapshots/:snap_id`` and return the raw Yjs state (T-028).
+
+    The detail route ships the snapshot's ``yjs_state_base64`` so the client
+    can decode + render it with its own renderer (see
+    ``renderer.snapshot_state_to_blocks``).
+    """
+    url = f"{http_base_url.rstrip('/')}/notes/{quote(note_id)}/snapshots/{quote(snapshot_id)}"
+    data = await asyncio.to_thread(_get_json_sync, url, access_token)
+    encoded = _require_str(data, "yjs_state_base64")
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except binascii.Error as exc:
+        raise NotesApiError(f"snapshot {snapshot_id}: yjs_state_base64 is not base64") from exc
 
 
 async def restore_snapshot(
