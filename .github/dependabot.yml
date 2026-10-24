@@ -13,7 +13,7 @@ updates:
     # Remove this ignore once a typescript-eslint release supports TypeScript 7.
     ignore:
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        versions: [">=7"]
   - package-ecosystem: "npm"
     directory: "/server"
     schedule:
@@ -23,7 +23,7 @@ updates:
     # Remove this ignore once a typescript-eslint release supports TypeScript 7.
     ignore:
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        versions: [">=7"]
   - package-ecosystem: "uv"
     directory: "/tui"
     schedule:
