@@ -5,13 +5,15 @@
 **Goal.** Self-hosted real-time collaborative notes for a small friend group: a SvelteKit/ProseMirror
 web editor and a Python Textual TUI as equal Yjs peers on a Node + Hocuspocus + SQLite server.
 
-**Current state (main @ c2b8163, 2026-10-23).** Every implementation task in `TASKS.md` (Phase 0, R, D, A, S, W,
+**Current state (main @ db710c1, 2026-10-23).** Every implementation task in `TASKS.md` (Phase 0, R, D, A, S, W,
 T, C, M, I, X, O, Q) is `[x]`, including the six weekend tasks (R-008, S-014, W-029, T-027, T-028, Q-007),
 which merged in PR #115. Only the launch checklist (L-001…L-010, minus L-006) is open, and all
 of it needs Evan (credentials, DNS, friends, a soak). The app runs on Railway at
-`bartleby-production-721b.up.railway.app` (`/health` → 200 on 2026-10-22). Since then Evan merged 21 of the
-23 Dependabot PRs; two remain open: #99 (node 22→26 image in `server/Dockerfile`) and #88 (typescript 5→7
-in `/server`). No other open PRs. (BLOCKED.md's Dependabot line still says 23; that's for Evan to update.)
+`bartleby-production-721b.up.railway.app` (`/health` → 200 on 2026-10-22). Since then Evan merged most of the
+23 Dependabot PRs; of that set only #99 (node 22→26 image in `server/Dockerfile`) is still open. #88 (typescript
+5→7 in `/server`) was closed, and #118 merged: Dependabot now holds typescript `>=7` in `/web` and `/server`
+because typescript-eslint doesn't support TS 7 yet (see `.github/dependabot.yml`). A new batch of Dependabot
+PRs, #119–#134, is open. No other open PRs. (BLOCKED.md's Dependabot line still says 23; that's for Evan to update.)
 The `chore/adopt-blocker-standard` branch (ROCRLL rules in CLAUDE.md/agents.md + DECISIONS.md) still
 exists on origin, unmerged. Leave it and Evan's local checkout alone.
 
@@ -44,6 +46,8 @@ don't merge.
 ### Do NOT
 - Deploy (Railway, `ops/deploy.sh`, `docker compose up` on any host) or change Railway variables.
 - Merge any PR, Dependabot included, or push to `main`.
+- Take TypeScript 7 in `/web` or `/server`, or remove the Dependabot hold from #118. It fails `npm install`
+  until typescript-eslint supports it; lifting the hold is Evan's call.
 - Work on L-001…L-010 (allowlist, Google OAuth, DNS/Caddy, Litestream bucket, prod happy-path, friend
   invites, soak, retro). These need Evan or real credentials.
 - Flip the optional secrets in `server/src/config.ts` (O-008) to required. That's a deploy-time decision.
