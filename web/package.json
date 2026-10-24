@@ -33,7 +33,7 @@
     "jose": "^6.2.3",
     "patch-package": "^8.0.1",
     "prettier": "^3.4.0",
-    "prettier-plugin-svelte": "^3.3.0",
+    "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.16.0",
     "svelte-check": "^4.7.1",
     "typescript": "^5.7.0",
